@@ -1,38 +1,127 @@
-#   ┌────────────────────────────────────────────────────────┐
-#   │                 AETHELGUARD  DİL DOSYASI               │
-#   ├────────────────────────────────────────────────────────┤
-#   │ * MiniMessage etiketlerini ve RGB renklerini destekler.│
-#   │ * {remaining} ifadesi kalan hatalı giriş hakkını basar.│
-#   │ * Satır atlamak istediğiniz yerlerde \n kullanın.      │
-#   └────────────────────────────────────────────────────────┘
+# ========================================================================
+#                         AETHELGUARD DİL DOSYASI
+# ========================================================================
+# MiniMessage etiketlerini, RGB renkleri ve placeholderları destekler.
+# Örnekler:
+#   <green>Başarılı
+#   <#55ff99>Özel RGB renk
+#   {player}, {uuid}, {remaining}, {limit}
+# Mesaj içinde yeni satır kullanmak isterseniz \n yazabilirsiniz.
+# ========================================================================
 
 messages:
-  # ─────────────── [ GİRİŞ EKRANI AYARLARI ] ────────────────
+  # -------------------- ADMİN KOMUTLARI --------------------
+  admin-no-permission: "<red>Bu komutu kullanmak için yetkiniz yok."
+  admin-usage: "<gray>Kullanım: <white>/aethelguard reload<gray>, <white>/aethelguard status <oyuncu><gray>, <white>/aethelguard sessions<gray>, <white>/aethelguard session <oyuncu><gray>, <white>/aethelguard clearsession <oyuncu><gray>, <white>/aethelguard clearsessions<gray>, <white>/aethelguard unregister <oyuncu><gray>, <white>/aethelguard changepassword <oyuncu> <yeniŞifre><gray>, <white>/aethelguard unlogin <oyuncu>"
+  admin-reload-success: "<green>Config ve dil dosyaları yeniden yüklendi."
+  admin-reload-failed: "<red>Yeniden yükleme sırasında bir sorun oluştu. Console'u kontrol edin."
+
+  admin-status-usage: "<gray>Kullanım: <white>/aethelguard status <oyuncu>"
+  admin-status-disabled: "<red>Status sistemi config.yml üzerinden kapatılmış."
+  admin-status-line: "<dark_gray>--------------------------------------------------"
+  admin-status-title: "<yellow><bold>Aethelguard Status</bold> <dark_gray>> <white>{player}"
+  admin-status-uuid: "<gray>UUID: <white>{uuid}"
+  admin-status-storage: "<gray>Kayıt tipi: <white>{storage}"
+  admin-status-online: "<gray>Oyunda: {online}"
+  admin-status-authenticated: "<gray>Giriş yaptı: {authenticated}"
+  admin-status-waiting-auth: "<gray>Giriş bekliyor: {waiting_auth}"
+  admin-status-wrong-attempts: "<gray>Hatalı denemeler: <white>{wrong_current} mevcut / {wrong_total} toplam"
+  admin-status-created-at: "<gray>Oluşturulma: <white>{created_at}"
+  admin-status-last-login: "<gray>Son giriş: <white>{last_login}"
+  admin-status-last-ip: "<gray>Son IP: <white>{last_ip}"
+  admin-status-last-world: "<gray>Son dünya: <white>{last_world}"
+  admin-status-last-location: "<gray>Son konum: <white>{last_location}"
+  admin-status-yes: "<green>Evet"
+  admin-status-no: "<red>Hayır"
+
+  admin-session-usage: "<gray>Kullanım: <white>/aethelguard session <oyuncu>"
+  admin-clear-session-usage: "<gray>Kullanım: <white>/aethelguard clearsession <oyuncu>"
+  admin-sessions-header: "<green>Aktif auth session sayısı: <white>{count}"
+  admin-sessions-empty: "<gray>Aktif auth session bulunmuyor."
+  admin-sessions-entry: "<gray>- <white>{player} <dark_gray>({uuid}) <gray>IP: <white>{ip} <gray>Bitiş: <white>{expires}"
+  admin-session-detail: "<green><white>{player} <green>session bilgisi<gray>: IP <white>{ip}<gray>, bitiş <white>{expires}<gray>, UUID <white>{uuid}"
+  admin-session-not-found: "<red><yellow>{player} <red>için aktif auth session bulunamadı."
+  admin-clear-session-success: "<green>Auth session temizlendi: <white>{player}"
+  admin-clear-sessions-success: "<green><white>{count} <green>auth session temizlendi."
+
+  admin-unregister-usage: "<gray>Kullanım: <white>/aethelguard unregister <oyuncu>"
+  admin-account-not-found: "<red><yellow>{player} <red>için hesap kaydı bulunamadı."
+  admin-unregister-success: "<green>Hesap silindi: <white>{player}"
+  admin-unregister-failed: "<red>Hesap silinemedi: <yellow>{player}"
+  admin-unregister-kick: "<gray>Aethelguard hesabınız bir yönetici tarafından silindi."
+
+  admin-change-password-usage: "<gray>Kullanım: <white>/aethelguard changepassword <oyuncu> <yeniŞifre>"
+  admin-change-password-success: "<green>Şifre değiştirildi: <white>{player}"
+  admin-change-password-failed: "<red>Şifre değiştirilemedi: <yellow>{player}"
+
+  admin-unlogin-usage: "<gray>Kullanım: <white>/aethelguard unlogin <oyuncu>"
+  admin-player-not-online: "<red>Bu oyuncu şu anda oyunda değil."
+  admin-player-not-authenticated: "<red>Bu oyuncu zaten giriş yapmış durumda değil."
+  admin-unlogin-success: "<green>Oyuncu tekrar giriş ekranına taşındı: <white>{player}"
+
+  # -------------------- GİRİŞ EKRANI --------------------
   welcome-message: "<aqua>Sunucuya başarıyla bağlandınız. <green>Yeniden hoş geldiniz!"
-  secure-void-zone: "<gray>[<dark_purple>🛡</dark_purple>] <light_purple>Güvenlik sistemi aktif: Kimliğinizi doğrulayana kadar güvenli bölgedesiniz."
-  login-prompt: "<gray>Hoşgeldiniz! Lütfen giriş yapın. <white>/login <şifre>"
-  register-prompt: "<gray>Sunucuya hoşgeldiniz! Lütfen kayıt olun. <white>/register <şifre> <şifre tekrar>"
-  plugin-reloaded-auth: "<red><bold>GÜVENLİK GÜNCELLENDİ!</bold> <gray>Sistem yenilendi, lütfen kimliğinizi tekrar doğrulayın."
+  secure-void-zone: "<gray>[<dark_purple>!</dark_purple>] <light_purple>Güvenlik sistemi aktif: Kimliğinizi doğrulayana kadar güvenli bölgedesiniz."
+  login-prompt: "<gray>Hoş geldiniz! Lütfen giriş yapın. <white>/login <şifre>"
+  register-prompt: "<gray>Sunucuya hoş geldiniz! Lütfen kayıt olun. <white>/register <şifre> <şifre tekrar>"
+  plugin-reloaded-auth: "<red>Sistem yenilendi, lütfen kimliğinizi tekrar doğrulayın."
+  session-login-success: "<green>Aktif oturumunuz bulundu, tekrar şifre girmeniz gerekmedi."
+  captcha-prompt: "<gray>Captcha doğrulaması <dark_gray>(<white>{type}<dark_gray>)<gray>: <yellow>{challenge}<gray>. <white>/captcha <kod> <gray>komutunu kullanın."
+  captcha-map-prompt: "<gray>Captcha haritasındaki kodu okuyun, sonra <white>/captcha <kod> <gray>komutunu kullanın."
+  bossbar-captcha: "Captcha gerekli: /captcha <kod>"
+  bossbar-login: "Giriş gerekli: /login <şifre>"
+  bossbar-register: "Kayıt gerekli: /register <şifre> <şifre tekrar>"
+  bossbar-two-factor: "Authenticator gerekli: /2fa <kod>"
+  captcha-required-before-auth: "<red>Giriş yapmadan veya kayıt olmadan önce captcha doğrulamasını tamamlamalısınız."
+  captcha-usage: "<gray>Kullanım: <white>/captcha <kod>"
+  captcha-success-title: "<green><bold>Captcha doğrulandı"
+  captcha-login-popup: "<gray>Devam etmek için <white>/login <şifre><gray> kullanın."
+  captcha-register-popup: "<gray>Devam etmek için <white>/register <şifre> <şifre tekrar><gray> kullanın."
+  captcha-wrong: "<red>Captcha yanlış. Kalan deneme hakkınız: <yellow>{remaining}"
+  captcha-cooldown: "<red>Yeni captcha kodu denemeden önce <yellow>{seconds}s <red>bekleyin."
+  captcha-expired: "<red>Captcha süresi doldu. Yeni bir captcha oluşturuldu."
+  captcha-kick: "<gray>{max} kez hatalı captcha denemesi yaptığınız için sunucudan uzaklaştırıldınız."
+  captcha-not-required: "<gray>Şu anda captcha çözmeniz gerekmiyor."
+  captcha-already-authenticated: "<gray>Zaten kimliğinizi doğruladınız."
 
+  # -------------------- ENGELLENEN İŞLEMLER --------------------
+  chat-denied: "<red>Sohbete katılabilmek için önce giriş yapmalısınız."
+  command-denied: "<red>Giriş yapmadan komut kullanamazsınız."
 
-  # ─────────────── [ ENGELLEME MESAJLARI ] ─────────────────
-  chat-denied: "<red><bold>[!]</bold> <gray>Sohbete katılabilmek için önce giriş yapmalısınız."
-  command-denied: "<red><bold>[!]</bold> <gray>Erişim engellendi! Giriş yapmadan komut kullanamazsınız."
+  # -------------------- HATA VE KULLANIM --------------------
+  only-players: "<red>Bu komut sadece oyun içindeki oyuncular tarafından kullanılabilir!"
+  register-usage: "<red>Geçersiz kullanım. Doğru format: <yellow>/register <şifre> <şifre_tekrar>"
+  login-usage: "<red>Geçersiz kullanım. Doğru format: <yellow>/login <şifre>"
+  change-password-usage: "<red>Geçersiz kullanım. Doğru format: <yellow>/changepassword <eskiŞifre> <yeniŞifre> <yeniŞifreTekrar>"
+  change-password-auth-required: "<red>Şifrenizi değiştirmek için önce giriş yapmalısınız."
+  change-password-wrong-current: "<red>Mevcut şifreniz yanlış."
+  change-password-error: "<red>Şifreniz değiştirilirken bir sorun oluştu. Lütfen yetkililere bildirin."
+  passwords-dont-match: "<red>Girdiğiniz şifreler birbiriyle uyuşmuyor. Lütfen kontrol edin."
+  already-registered: "<red>Bu hesap zaten kayıtlı. Lütfen <yellow>/login <red>komutunu kullanın."
+  not-registered: "<red>Kayıtlı bir hesap bulunamadı. Lütfen önce <yellow>/register <red>yapın."
+  register-error: "<red>Veritabanı kaydı sırasında bir hata oluştu. Lütfen yetkililere bildirin."
+  ip-registration-limit-reached: "<red>Bu IP adresi kayıt limitine ulaşmış. Maksimum hesap sayısı: <yellow>{limit}<red>."
 
-  # ─────────────── [ HATA & KULLANIM MESAJLARI ] ─────────────
-  only-players: "<red>Bu komut sadece oyun içerisindeki oyuncular tarafından kullanılabilir!"
-  register-usage: "<red><bold>HATA</bold> <dark_gray>» <gray>Geçersiz kullanım! Doğru format: <yellow>/register <şifre> <şifre_tekrar>"
-  login-usage: "<red><bold>HATA</bold> <dark_gray>» <gray>Geçersiz kullanım! Doğru format: <yellow>/login <şifre>"
-  passwords-dont-match: "<red><bold>HATA</bold> <dark_gray>» <gray>Girdiğiniz şifreler birbiriyle uyuşmuyor! Lütfen kontrol edin."
-  already-registered: "<red><bold>HATA</bold> <dark_gray>» <gray>Bu hesap zaten kayıtlı! Lütfen <yellow>/login <red>komutunu kullanın."
-  not-registered: "<red><bold>HATA</bold> <dark_gray>» <gray>Kayıtlı bir hesap bulunamadı. Lütfen önce <yellow>/register <red>yapın."
-  register-error: "<red><bold>KRİTİK HATA</bold> <dark_gray>» <gray>Veritabanı kaydı esnasında bir hata oluştu! Lütfen yetkililere bildirin."
+  # -------------------- BAŞARILI İŞLEMLER --------------------
+  register-success: "<green>Hesabınız başarıyla oluşturuldu. İyi oyunlar dileriz."
+  login-success: "<green>Kimlik doğrulaması tamamlandı. İyi oyunlar dileriz."
+  change-password-success: "<green>Şifreniz başarıyla değiştirildi."
+  two-factor-login-required: "<yellow>İki aşamalı doğrulama aktif. Girişi tamamlamak için <white>/2fa <kod><yellow> kullanın."
+  two-factor-login-usage: "<gray>Kullanım: <white>/2fa <kod>"
+  two-factor-auth-required: "<red>İki aşamalı doğrulamayı yönetmek için önce giriş yapmalısınız."
+  two-factor-usage: "<gray>Kullanım: <white>/2fa setup<gray>, <white>/2fa confirm <kod><gray>, <white>/2fa disable <kod><gray>, <white>/2fa status"
+  two-factor-confirm-usage: "<gray>Kullanım: <white>/2fa confirm <kod>"
+  two-factor-disable-usage: "<gray>Kullanım: <white>/2fa disable <kod>"
+  two-factor-setup-start: "<green>Google Authenticator, Microsoft Authenticator, Authy veya benzer bir uygulamada yeni TOTP hesabı ekleyin. Secret: <yellow>{secret}<green>. Sonra <white>/2fa confirm <kod><green> kullanın."
+  two-factor-setup-missing: "<red>Bekleyen iki aşamalı doğrulama kurulumu bulunamadı. Önce <yellow>/2fa setup <red>kullanın."
+  two-factor-code-invalid: "<red>Authenticator kodu geçersiz veya süresi dolmuş."
+  two-factor-enabled: "<green>Hesabınızda iki aşamalı doğrulama aktifleştirildi."
+  two-factor-disabled: "<green>Hesabınızda iki aşamalı doğrulama kapatıldı."
+  two-factor-status-enabled: "<green>Hesabınızda iki aşamalı doğrulama aktif."
+  two-factor-status-disabled: "<gray>Hesabınızda iki aşamalı doğrulama aktif değil."
+  two-factor-error: "<red>İki aşamalı doğrulama sırasında bir hata oluştu. Lütfen yetkililere bildirin."
 
-  # ─────────────── [ BAŞARI & CEZA MESAJLARI ] ──────────────
-  register-success: "<green><bold>BAŞARILI!</bold> <white>Hesabınız başarıyla oluşturuldu. İyi oyunlar dileriz."
-  login-success: "<green><bold>BAŞARILI!</bold> <white>Kimlik doğrulaması tamamlandı. İyi oyunlar dileriz!"
-  wrong-password: "<red><bold>HATALI ŞİFRE!</bold> <gray>Girdiğiniz şifre yanlış. Kalan Deneme Hakkınız: <yellow>{remaining}<gray>/3"
-
-  # ─────────────── [ OYUNDAN ATMA (KICK) MESAJLARI ] ─────────
+  # -------------------- GÜVENLİK CEZALARI --------------------
+  wrong-password: "<red>Girdiğiniz şifre yanlış. Kalan deneme hakkınız: <yellow>{remaining}<gray>/{max}"
   timeout-kick: "<gray>Süre doldu! 60 saniye içinde giriş yapmadığınız için sunucudan uzaklaştırıldınız."
-  wrong-password-kick: "<gray>Güvenlik engeli! 3 kez hatalı şifre girdiğiniz için sunucudan uzaklaştırıldınız."
+  wrong-password-kick: "<gray>Güvenlik engeli! {max} kez hatalı şifre girdiğiniz için sunucudan uzaklaştırıldınız."

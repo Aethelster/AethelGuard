@@ -18,6 +18,11 @@ default-language: "TR"
 # Console/plugin log language only. This does NOT load custom message files.
 # Supported values are only "en" and "tr"; any other value behaves like English.
 console-language: "en"
+# Console text style used only when console-language is "tr".
+# "native": keeps normal Turkish characters such as ç, ğ, ı, ö, ş, ü.
+# "ascii": converts them to console-safe letters such as c, g, i, o, s, u.
+# Use ascii if your hosting panel, Windows console, or server logs show broken Turkish text.
+console-text-mode: "ascii"
 
 # ───────────────────── [ DATABASE SETTINGS ] ────────────────────
 # MySQL account storage. If enabled is false, local YAML user files are used.
@@ -43,19 +48,21 @@ database:
     max-lifetime-ms: 1800000
 
 # ───────────────────── [ LOGGING SETTINGS ] ─────────────────────
-local-logging:
-  # Writes successful login/register records into plugins/Aethelguard/<folder>/<file-name>.txt
-  # This is separate from console logs and may include UUID/IP/password hash details.
+status:
+  # Enables /aethelguard status and local user metadata/index files.
   enabled: true
-  folder: "internal"
-  file-name: "users"
-  separator: "--------------------------------------------------"
+  # If true and database.enabled is false, creates plugins/Aethelguard/users/.
+  create-local-users-folder: true
+  # Text index written inside the users folder. It maps usernames to UUID file names.
+  user-index-file: "user-index.txt"
 console-logging:
   # Hides vanilla connection/auth noise such as join/quit, UUID, lost connection,
   # logged in with entity id, and issued server command lines.
   suppress-server-connection-logs: true
   # Logs only successful Aethelguard login/register events to console.
   log-auth-success: true
+  # Logs auth state changes such as authenticated quit, unauthenticated quit, and admin unlogin.
+  log-auth-state-changes: true
   # Logs when unauthenticated players try to chat.
   log-blocked-chat-attempts: true
 
@@ -76,6 +83,75 @@ auth-settings:
   clear-chat-on-auth: true
   # Logs denied commands used before authentication. Login/register commands are never logged.
   log-unauthenticated-command-attempts: true
+
+  registration:
+    ip-limit:
+      # Limits how many accounts can be registered from the same IP address.
+      enabled: true
+      # Maximum account count per IP. Set 0 or a negative number for unlimited.
+      max-accounts: 2
+      # Players with this permission can register even when their IP reached the limit.
+      bypass-permission: "aethelguard.bypass.iplimit"
+
+  captcha:
+    # Requires players to solve a captcha before /login or /register can be used.
+    enabled: true
+    # Default is MAP. You can add other types if you want random selection.
+    # Available types:
+    # - MAP: gives the player a map item with the captcha code.
+    # - TEXT: letters only.
+    # - NUMERIC: numbers only.
+    # - ALPHANUMERIC: letters and numbers.
+    # - MATH: simple math question.
+    # Example for random captcha types:
+    # types: ["MAP", "TEXT", "NUMERIC", "ALPHANUMERIC", "MATH"]
+    types: ["MAP"]
+    # Used by TEXT, NUMERIC, ALPHANUMERIC and MAP.
+    length: 5
+    # false is recommended so players can type letters without worrying about case.
+    case-sensitive: false
+    # Captcha lifetime in seconds. When it expires, a new one is generated.
+    timeout-seconds: 60
+    # Delay between /captcha attempts. Prevents spam and brute force.
+    cooldown-seconds: 2
+    # Wrong captcha attempts before captcha punishment.
+    # This counter is separate from wrong-password.max-attempts.
+    max-attempts: 5
+    # true: kick after captcha max-attempts.
+    # false: generate a new captcha instead of kicking.
+    # This does not affect wrong-password.kick-enabled.
+    kick-enabled: true
+    map:
+      # Gives a filled map item when MAP captcha is selected.
+      give-item: true
+      item-name: "<yellow>Captcha"
+    success-sound:
+      enabled: true
+      sound: "entity.experience_orb.pickup"
+      volume: 1.0
+      pitch: 1.4
+      repeat-times: 1
+      repeat-interval-ticks: 1
+
+  two-factor:
+    # Enables authenticator app support. Google Authenticator, Microsoft Authenticator,
+    # Authy and similar apps all use the same TOTP standard.
+    enabled: true
+    # Name shown inside authenticator apps when players add their secret.
+    issuer: "Aethelguard"
+    # Allows small clock drift. 1 means previous/current/next 30-second code is accepted.
+    code-window: 1
+
+  # ───────────────────── [ SESSION SETTINGS ] ────────────────────
+  sessions:
+    # Allows recently authenticated players to rejoin without typing /login again.
+    # Sessions are kept in memory and reset when the server restarts.
+    enabled: true
+    # How long a session stays valid after successful login/register.
+    duration-minutes: 10
+    # true: auto-login only works from the same IP address.
+    # Recommended for public/offline-mode servers.
+    match-ip: true
 
   # ─────────────────── [ VOID ZONE SETTINGS ] ───────────────────
   void-zone:
@@ -101,12 +177,36 @@ auth-settings:
 
   # ─────────────────── [ PROMPT SETTINGS ] ──────────────────────
   prompts:
-    # Repeats login/register reminder messages until the player authenticates.
+    # Master switch for auth reminder messages.
+    # false: no repeating prompt task is started.
     enabled: true
     # Delay before the first reminder. 20 ticks = 1 second.
     initial-delay-ticks: 20
-    # Delay between reminders. 100 ticks = 5 seconds.
-    interval-ticks: 100
+    # Captcha reminder repeat switch.
+    # false: the captcha message is sent once when the player enters captcha state.
+    captcha-repeat-enabled: true
+    # Captcha reminder delay. 200 ticks = 10 seconds.
+    captcha-interval-ticks: 200
+    # Login reminder repeat switch.
+    # false: the login message is sent once when the player enters login state.
+    login-repeat-enabled: true
+    # Login reminder delay. 200 ticks = 10 seconds.
+    login-interval-ticks: 200
+    # Register reminder repeat switch.
+    # false: the register message is sent once when the player enters register state.
+    register-repeat-enabled: true
+    # Register reminder delay. 200 ticks = 10 seconds.
+    register-interval-ticks: 200
+
+  bossbar:
+    # Shows a bossbar with the command the player must use while waiting for auth.
+    enabled: true
+    # Available colors: PINK, BLUE, RED, GREEN, YELLOW, PURPLE, WHITE.
+    color: "YELLOW"
+    # Available styles: SOLID, SEGMENTED_6, SEGMENTED_10, SEGMENTED_12, SEGMENTED_20.
+    style: "SOLID"
+    # Visual fill amount between 0.0 and 1.0.
+    progress: 1.0
 
   # ─────────────────── [ TIMEOUT SETTINGS ] ─────────────────────
   timeout:
@@ -140,13 +240,25 @@ auth-settings:
       - "/giriş"
       - "/register"
       - "/kayitol"
+      - "/captcha"
+      - "/dogrula"
+      - "/doğrula"
+      - "/twofactor"
+      - "/2fa"
+      - "/authenticator"
+      - "/authy"
       - "/kayıtol"
 
   # ─────────────────── [ WRONG PASSWORD SETTINGS ] ──────────────
   wrong-password:
-    # Failed /login attempts before punishment.
+    # Failed /login password attempts before password punishment.
+    # This counter is separate from captcha.max-attempts.
+    # /register does not use this as a password-fail counter because new accounts
+    # only compare password confirmation before creating the account.
     max-attempts: 3
-    # true: kick after max-attempts. false: show remaining attempts but never kick.
+    # true: kick after wrong-password max-attempts.
+    # false: show remaining attempts but never kick.
+    # This does not affect captcha.kick-enabled.
     kick-enabled: true
 
   # ─────────────────── [ SOUND SETTINGS ] ───────────────────────

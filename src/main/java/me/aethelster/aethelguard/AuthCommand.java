@@ -6,6 +6,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.Location;
 import org.mindrot.jbcrypt.BCrypt;
 
 import java.io.File;
@@ -16,6 +17,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Map;
 import java.util.UUID;
 
 public class AuthCommand implements CommandExecutor {
@@ -73,16 +75,26 @@ public class AuthCommand implements CommandExecutor {
                 return;
             }
 
+            int maxAccounts = plugin.getConfig().getInt("auth-settings.registration.ip-limit.max-accounts", 2);
+            if (isIpRegistrationLimitReached(player, ipAddress, maxAccounts)) {
+                plugin.getServer().getScheduler().runTask(plugin, () ->
+                        plugin.sendMessage(player, "messages.ip-registration-limit-reached", true,
+                                java.util.Map.of("limit", String.valueOf(maxAccounts)))
+                );
+                return;
+            }
+
             String hashedPassword = BCrypt.hashpw(args[0], BCrypt.gensalt());
 
-            if (registerPlayer(uuidStr, player.getName(), hashedPassword)) {
+            if (registerPlayer(uuidStr, player.getName(), hashedPassword, player, ipAddress)) {
                 plugin.getUnauthenticatedPlayers().remove(playerUUID);
-                logPlayerAction(player, ipAddress, hashedPassword);
 
                 plugin.getServer().getScheduler().runTask(plugin, () -> {
                     plugin.playConfiguredSound(player, "auth-settings.sounds.register-success");
                     plugin.completeLogin(player, false);
+                    plugin.rememberAuthSession(player);
                     player.teleport(player.getWorld().getSpawnLocation());
+                    plugin.updateAccountSnapshot(player, true);
                     logAuthSuccess(player, true);
                     plugin.sendMessage(player, "messages.register-success", true);
                 });
@@ -111,13 +123,21 @@ public class AuthCommand implements CommandExecutor {
             }
 
             if (BCrypt.checkpw(args[0], storedHash)) {
+                if (plugin.isTwoFactorEnabled(player)) {
+                    plugin.getServer().getScheduler().runTask(plugin, () ->
+                            plugin.startTwoFactorLogin(player)
+                    );
+                    return;
+                }
+
                 plugin.getUnauthenticatedPlayers().remove(playerUUID);
                 plugin.getWrongPasswordAttempts().remove(playerUUID);
-                logPlayerAction(player, ipAddress, storedHash);
 
                 plugin.getServer().getScheduler().runTask(plugin, () -> {
                     plugin.playConfiguredSound(player, "auth-settings.sounds.login-success");
                     plugin.completeLogin(player, true);
+                    plugin.rememberAuthSession(player);
+                    plugin.updateAccountSnapshot(player, true);
                     logAuthSuccess(player, false);
                 });
                 return;
@@ -130,6 +150,7 @@ public class AuthCommand implements CommandExecutor {
     private void handleWrongPassword(Player player, UUID playerUUID) {
         int attempts = plugin.getWrongPasswordAttempts().getOrDefault(playerUUID, 0) + 1;
         plugin.getWrongPasswordAttempts().put(playerUUID, attempts);
+        recordWrongPasswordAttempt(player);
 
         plugin.getServer().getScheduler().runTask(plugin, () ->
                 plugin.playConfiguredSound(player, "auth-settings.sounds.wrong-password")
@@ -139,15 +160,21 @@ public class AuthCommand implements CommandExecutor {
         boolean kickEnabled = plugin.getConfig().getBoolean("auth-settings.wrong-password.kick-enabled", true);
 
         if (kickEnabled && attempts >= maxAttempts) {
-            plugin.getServer().getScheduler().runTask(plugin, () ->
-                    player.kickPlayer(plugin.getRawStringMessage("messages.wrong-password-kick", true))
-            );
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    plugin.restorePreviousLocation(player);
+                    plugin.restoreAuthInventory(player);
+                    plugin.hideAuthBossBar(player);
+                    player.kickPlayer(plugin.getRawStringMessage("messages.wrong-password-kick", true, Map.of(
+                            "max", String.valueOf(maxAttempts)
+                    )));
+            });
             plugin.getWrongPasswordAttempts().remove(playerUUID);
             return;
         }
 
         String wrongMsg = plugin.getFormattedMessageString("messages.wrong-password", true)
-                .replace("{remaining}", String.valueOf(Math.max(0, maxAttempts - attempts)));
+                .replace("{remaining}", String.valueOf(Math.max(0, maxAttempts - attempts)))
+                .replace("{max}", String.valueOf(maxAttempts));
 
         plugin.getServer().getScheduler().runTask(plugin, () ->
                 player.sendMessage(
@@ -185,16 +212,34 @@ public class AuthCommand implements CommandExecutor {
         plugin.writeToInternalLog(fileName, logData);
     }
 
-    private boolean registerPlayer(String uuid, String username, String hashedPassword) {
+    private boolean registerPlayer(String uuid, String username, String hashedPassword, Player player, String ipAddress) {
+        String now = currentDate();
+        Location location = player.getLocation();
+
         if (!plugin.getConfig().getBoolean("database.enabled", false)) {
             File userFile = new File(plugin.getLocalUsersFolder(), uuid + ".yml");
             userFile.getParentFile().mkdirs();
 
             FileConfiguration config = YamlConfiguration.loadConfiguration(userFile);
+            config.set("uuid", uuid);
             config.set("username", username);
             config.set("password", hashedPassword);
+            config.set("created-at", now);
+            config.set("registration-ip", ipAddress);
+            config.set("last-login", now);
+            config.set("last-ip", ipAddress);
+            config.set("last-world", location.getWorld() == null ? "UNKNOWN" : location.getWorld().getName());
+            config.set("last-location.x", location.getX());
+            config.set("last-location.y", location.getY());
+            config.set("last-location.z", location.getZ());
+            config.set("stats.login-count", 0);
+            config.set("security.wrong-attempts-total", 0);
+            config.set("security.last-wrong-attempt", null);
+            config.set("two-factor.enabled", false);
+            config.set("two-factor.secret", null);
             try {
                 config.save(userFile);
+                plugin.rebuildUserIndex();
                 return true;
             } catch (IOException e) {
                 return false;
@@ -203,16 +248,104 @@ public class AuthCommand implements CommandExecutor {
 
         try (Connection conn = plugin.getDatabaseManager().getConnection()) {
             if (conn == null) return false;
-            try (PreparedStatement ps = conn.prepareStatement("INSERT INTO " + plugin.getAuthTableName() + " (uuid, username, password) VALUES (?, ?, ?);")) {
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "INSERT INTO " + plugin.getAuthTableName() +
+                            " (uuid, username, password, registration_ip, last_ip, last_world, last_x, last_y, last_z, login_count) " +
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);"
+            )) {
                 ps.setString(1, uuid);
                 ps.setString(2, username);
                 ps.setString(3, hashedPassword);
+                ps.setString(4, ipAddress);
+                ps.setString(5, ipAddress);
+                ps.setString(6, location.getWorld() == null ? "UNKNOWN" : location.getWorld().getName());
+                ps.setDouble(7, location.getX());
+                ps.setDouble(8, location.getY());
+                ps.setDouble(9, location.getZ());
+                ps.setInt(10, 0);
                 ps.executeUpdate();
                 return true;
             }
         } catch (SQLException e) {
             return false;
         }
+    }
+
+    private void recordWrongPasswordAttempt(Player player) {
+        String uuid = player.getUniqueId().toString();
+        String now = currentDate();
+
+        if (!plugin.getConfig().getBoolean("database.enabled", false)) {
+            File userFile = new File(plugin.getLocalUsersFolder(), uuid + ".yml");
+            if (!userFile.exists()) return;
+
+            FileConfiguration config = YamlConfiguration.loadConfiguration(userFile);
+            config.set("security.wrong-attempts-total", config.getInt("security.wrong-attempts-total", 0) + 1);
+            config.set("security.last-wrong-attempt", now);
+            try {
+                config.save(userFile);
+            } catch (IOException ignored) {
+            }
+            return;
+        }
+
+        try (Connection conn = plugin.getDatabaseManager().getConnection()) {
+            if (conn == null) return;
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE " + plugin.getAuthTableName() +
+                            " SET wrong_attempts_total = wrong_attempts_total + 1, last_wrong_attempt = ? WHERE uuid = ?;"
+            )) {
+                ps.setString(1, now);
+                ps.setString(2, uuid);
+                ps.executeUpdate();
+            }
+        } catch (SQLException ignored) {
+        }
+    }
+
+    private boolean isIpRegistrationLimitReached(Player player, String ipAddress, int maxAccounts) {
+        if (!plugin.getConfig().getBoolean("auth-settings.registration.ip-limit.enabled", true)) return false;
+        if (maxAccounts <= 0) return false;
+
+        String bypassPermission = plugin.getConfig().getString("auth-settings.registration.ip-limit.bypass-permission", "aethelguard.bypass.iplimit");
+        if (bypassPermission != null && !bypassPermission.isBlank() && player.hasPermission(bypassPermission)) return false;
+
+        return countAccountsByIp(ipAddress) >= maxAccounts;
+    }
+
+    private int countAccountsByIp(String ipAddress) {
+        if (ipAddress == null || ipAddress.isBlank() || ipAddress.equalsIgnoreCase("UNKNOWN")) return 0;
+
+        if (!plugin.getConfig().getBoolean("database.enabled", false)) {
+            File[] files = plugin.getLocalUsersFolder().listFiles((dir, name) -> name.endsWith(".yml"));
+            if (files == null) return 0;
+
+            int count = 0;
+            for (File file : files) {
+                FileConfiguration config = YamlConfiguration.loadConfiguration(file);
+                String registrationIp = config.getString("registration-ip", config.getString("last-ip", ""));
+                if (ipAddress.equals(registrationIp)) count++;
+            }
+            return count;
+        }
+
+        try (Connection conn = plugin.getDatabaseManager().getConnection()) {
+            if (conn == null) return 0;
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "SELECT COUNT(*) FROM " + plugin.getAuthTableName() + " WHERE COALESCE(registration_ip, last_ip) = ?;"
+            )) {
+                ps.setString(1, ipAddress);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) return rs.getInt(1);
+                }
+            }
+        } catch (SQLException ignored) {
+        }
+        return 0;
+    }
+
+    private String currentDate() {
+        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
     }
 
     private String getStoredPassword(String uuid) {

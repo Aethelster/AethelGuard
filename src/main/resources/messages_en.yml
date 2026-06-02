@@ -1,38 +1,127 @@
-#   ┌────────────────────────────────────────────────────────┐
-#   │                  AETHELGUARD LANGUAGE FILE             │
-#   ├────────────────────────────────────────────────────────┤
-#   │ * Supports MiniMessage tags and RGB colors.            │
-#   │ * {remaining} placeholder displays remaining attempts. │
-#   │ * Use \n where you want to create a new line.          │
-#   └────────────────────────────────────────────────────────┘
+# ============================================================
+#                AETHELGUARD LANGUAGE FILE
+# ============================================================
+# Supports MiniMessage tags, RGB colors, and placeholders.
+# Examples:
+#   <green>Success
+#   <#55ff99>Custom RGB color
+#   {player}, {uuid}, {remaining}, {limit}
+# Use \n inside a message if you want a new line.
+# ============================================================
 
 messages:
-  # ─────────────── [ AUTH SCREEN SETTINGS ] ────────────────
+  # -------------------- ADMIN COMMANDS --------------------
+  admin-no-permission: "<red>You do not have permission to use this command."
+  admin-usage: "<gray>Usage: <white>/aethelguard reload<gray>, <white>/aethelguard status <player><gray>, <white>/aethelguard sessions<gray>, <white>/aethelguard session <player><gray>, <white>/aethelguard clearsession <player><gray>, <white>/aethelguard clearsessions<gray>, <white>/aethelguard unregister <player><gray>, <white>/aethelguard changepassword <player> <newPassword><gray>, <white>/aethelguard unlogin <player>"
+  admin-reload-success: "<green>Config and language files have been reloaded."
+  admin-reload-failed: "<red>Reload failed. Please check the console."
+
+  admin-status-usage: "<gray>Usage: <white>/aethelguard status <player>"
+  admin-status-disabled: "<red>Status system is disabled in config.yml."
+  admin-status-line: "<dark_gray>--------------------------------------------------"
+  admin-status-title: "<yellow><bold>Aethelguard Status</bold> <dark_gray>> <white>{player}"
+  admin-status-uuid: "<gray>UUID: <white>{uuid}"
+  admin-status-storage: "<gray>Storage: <white>{storage}"
+  admin-status-online: "<gray>Online: {online}"
+  admin-status-authenticated: "<gray>Authenticated: {authenticated}"
+  admin-status-waiting-auth: "<gray>Waiting Auth: {waiting_auth}"
+  admin-status-wrong-attempts: "<gray>Wrong Attempts: <white>{wrong_current} current / {wrong_total} total"
+  admin-status-created-at: "<gray>Created At: <white>{created_at}"
+  admin-status-last-login: "<gray>Last Login: <white>{last_login}"
+  admin-status-last-ip: "<gray>Last IP: <white>{last_ip}"
+  admin-status-last-world: "<gray>Last World: <white>{last_world}"
+  admin-status-last-location: "<gray>Last Location: <white>{last_location}"
+  admin-status-yes: "<green>Yes"
+  admin-status-no: "<red>No"
+
+  admin-session-usage: "<gray>Usage: <white>/aethelguard session <player>"
+  admin-clear-session-usage: "<gray>Usage: <white>/aethelguard clearsession <player>"
+  admin-sessions-header: "<green>Active auth sessions: <white>{count}"
+  admin-sessions-empty: "<gray>There are no active auth sessions."
+  admin-sessions-entry: "<gray>- <white>{player} <dark_gray>({uuid}) <gray>IP: <white>{ip} <gray>Expires: <white>{expires}"
+  admin-session-detail: "<green>Session for <white>{player}<gray>: IP <white>{ip}<gray>, expires <white>{expires}<gray>, UUID <white>{uuid}"
+  admin-session-not-found: "<red>No active auth session found for <yellow>{player}<red>."
+  admin-clear-session-success: "<green>Auth session cleared for: <white>{player}"
+  admin-clear-sessions-success: "<green>Cleared <white>{count} <green>auth session(s)."
+
+  admin-unregister-usage: "<gray>Usage: <white>/aethelguard unregister <player>"
+  admin-account-not-found: "<red>No account record found for <yellow>{player}<red>."
+  admin-unregister-success: "<green>Account removed: <white>{player}"
+  admin-unregister-failed: "<red>Could not remove account: <yellow>{player}"
+  admin-unregister-kick: "<gray>Your Aethelguard account has been removed by an administrator."
+
+  admin-change-password-usage: "<gray>Usage: <white>/aethelguard changepassword <player> <newPassword>"
+  admin-change-password-success: "<green>Password changed for: <white>{player}"
+  admin-change-password-failed: "<red>Could not change password for: <yellow>{player}"
+
+  admin-unlogin-usage: "<gray>Usage: <white>/aethelguard unlogin <player>"
+  admin-player-not-online: "<red>That player is not online."
+  admin-player-not-authenticated: "<red>That player is not authenticated."
+  admin-unlogin-success: "<green>Player moved back to authentication screen: <white>{player}"
+
+  # -------------------- AUTH SCREEN --------------------
   welcome-message: "<aqua>Successfully connected. <green>Welcome back to the server!"
-  secure-void-zone: "<gray>[<dark_purple>🛡</dark_purple>] <light_purple>Security active: You are in a safe zone until you authenticate."
+  secure-void-zone: "<gray>[<dark_purple>!</dark_purple>] <light_purple>Security active: You are in a safe zone until you authenticate."
   login-prompt: "<gray>Welcome! Please log in. <white>/login <password>"
   register-prompt: "<gray>Welcome to the server! Please register. <white>/register <password> <password again>"
-  plugin-reloaded-auth: "<red><bold>SECURITY UPDATED!</bold> <gray>System has been reloaded, please re-authenticate."
+  plugin-reloaded-auth: "<red>System has been reloaded, please re-authenticate."
+  session-login-success: "<green>Your active session was found, no password was required."
+  captcha-prompt: "<gray>Captcha challenge <dark_gray>(<white>{type}<dark_gray>)<gray>: <yellow>{challenge}<gray>. Use <white>/captcha <code><gray>."
+  captcha-map-prompt: "<gray>Read the code on your captcha map, then use <white>/captcha <code><gray>."
+  bossbar-captcha: "Captcha required: /captcha <code>"
+  bossbar-login: "Login required: /login <password>"
+  bossbar-register: "Register required: /register <password> <password again>"
+  bossbar-two-factor: "Authenticator required: /2fa <code>"
+  captcha-required-before-auth: "<red>You must solve the captcha before logging in or registering."
+  captcha-usage: "<gray>Usage: <white>/captcha <code>"
+  captcha-success-title: "<green><bold>Captcha verified"
+  captcha-login-popup: "<gray>Use <white>/login <password><gray> to continue."
+  captcha-register-popup: "<gray>Use <white>/register <password> <password again><gray> to continue."
+  captcha-wrong: "<red>Wrong captcha. Remaining attempts: <yellow>{remaining}"
+  captcha-cooldown: "<red>Please wait <yellow>{seconds}s <red>before trying another captcha code."
+  captcha-expired: "<red>Your captcha expired. A new one has been generated."
+  captcha-kick: "<gray>You were disconnected after {max} incorrect captcha attempts."
+  captcha-not-required: "<gray>You do not need to solve a captcha right now."
+  captcha-already-authenticated: "<gray>You are already authenticated."
 
+  # -------------------- DENIED ACTIONS --------------------
+  chat-denied: "<red>You must log in before speaking in chat."
+  command-denied: "<red>You must log in before using commands."
 
-  # ─────────────── [ DENIAL MESSAGES ] ─────────────────────
-  chat-denied: "<red><bold>[!]</bold> <gray>Access denied! You must log in before speaking in chat."
-  command-denied: "<red><bold>[!]</bold> <gray>Access denied! You must log in before using commands."
-
-  # ─────────────── [ ERROR & USAGE MESSAGES ] ───────────────
+  # -------------------- ERROR AND USAGE --------------------
   only-players: "<red>This command can only be executed by in-game players!"
-  register-usage: "<red><bold>ERROR</bold> <dark_gray>» <gray>Invalid format! Correct usage: <yellow>/register <password> <confirm_password>"
-  login-usage: "<red><bold>ERROR</bold> <dark_gray>» <gray>Invalid format! Correct usage: <yellow>/login <password>"
-  passwords-dont-match: "<red><bold>ERROR</bold> <dark_gray>» <gray>The passwords you entered do not match! Please check again."
-  already-registered: "<red><bold>ERROR</bold> <dark_gray>» <gray>This account is already registered! Please use <yellow>/login<red>."
-  not-registered: "<red><bold>ERROR</bold> <dark_gray>» <gray>No account found with this username. Please <yellow>/register <red>first."
-  register-error: "<red><bold>CRITICAL ERROR</bold> <dark_gray>» <gray>A database error occurred during registration! Please notify staff."
+  register-usage: "<red>Invalid format. Correct usage: <yellow>/register <password> <confirm_password>"
+  login-usage: "<red>Invalid format. Correct usage: <yellow>/login <password>"
+  change-password-usage: "<red>Invalid format. Correct usage: <yellow>/changepassword <oldPassword> <newPassword> <newPasswordAgain>"
+  change-password-auth-required: "<red>You must be logged in before changing your password."
+  change-password-wrong-current: "<red>Your current password is incorrect."
+  change-password-error: "<red>An error occurred while changing your password. Please notify staff."
+  passwords-dont-match: "<red>The passwords you entered do not match. Please check again."
+  already-registered: "<red>This account is already registered. Please use <yellow>/login<red>."
+  not-registered: "<red>No account found with this username. Please <yellow>/register <red>first."
+  register-error: "<red>A database error occurred during registration. Please notify staff."
+  ip-registration-limit-reached: "<red>This IP address has reached the registration limit. Maximum accounts: <yellow>{limit}<red>."
 
-  # ─────────────── [ SUCCESS & PUNISHMENT ] ─────────────────
-  register-success: "<green><bold>SUCCESS!</bold> <white>Your account has been successfully created. Have fun!"
-  login-success: "<green><bold>SUCCESS!</bold> <white>Authentication successful. Enjoy your time!"
-  wrong-password: "<red><bold>WRONG PASSWORD!</bold> <gray>The password you entered is incorrect. Remaining Attempts: <yellow>{remaining}<gray>/3"
+  # -------------------- SUCCESS --------------------
+  register-success: "<green>Your account has been successfully created. Have fun."
+  login-success: "<green>Authentication successful. Enjoy your time."
+  change-password-success: "<green>Your password has been changed successfully."
+  two-factor-login-required: "<yellow>Two-factor authentication is enabled. Use <white>/2fa <code><yellow> to finish login."
+  two-factor-login-usage: "<gray>Usage: <white>/2fa <code>"
+  two-factor-auth-required: "<red>You must be logged in before managing two-factor authentication."
+  two-factor-usage: "<gray>Usage: <white>/2fa setup<gray>, <white>/2fa confirm <code><gray>, <white>/2fa disable <code><gray>, <white>/2fa status"
+  two-factor-confirm-usage: "<gray>Usage: <white>/2fa confirm <code>"
+  two-factor-disable-usage: "<gray>Usage: <white>/2fa disable <code>"
+  two-factor-setup-start: "<green>Add a new TOTP account in Google Authenticator, Microsoft Authenticator, Authy or a similar app. Secret: <yellow>{secret}<green>. Then use <white>/2fa confirm <code><green>."
+  two-factor-setup-missing: "<red>No pending two-factor setup was found. Use <yellow>/2fa setup <red>first."
+  two-factor-code-invalid: "<red>The authenticator code is invalid or expired."
+  two-factor-enabled: "<green>Two-factor authentication has been enabled for your account."
+  two-factor-disabled: "<green>Two-factor authentication has been disabled for your account."
+  two-factor-status-enabled: "<green>Two-factor authentication is enabled on your account."
+  two-factor-status-disabled: "<gray>Two-factor authentication is not enabled on your account."
+  two-factor-error: "<red>A two-factor authentication error occurred. Please notify staff."
 
-  # ─────────────── [ KICK MESSAGES ] ────────────────────────
+  # -------------------- SECURITY PUNISHMENTS --------------------
+  wrong-password: "<red>The password you entered is incorrect. Remaining attempts: <yellow>{remaining}<gray>/{max}"
   timeout-kick: "<gray>Time out! You were disconnected for failing to log in within 60 seconds."
-  wrong-password-kick: "<gray>Security lock! You were disconnected after 3 incorrect password attempts."
+  wrong-password-kick: "<gray>Security lock! You were disconnected after {max} incorrect password attempts."

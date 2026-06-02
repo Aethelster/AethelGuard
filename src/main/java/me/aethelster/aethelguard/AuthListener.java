@@ -15,8 +15,10 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.scheduler.BukkitRunnable;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 public class AuthListener implements Listener {
@@ -26,7 +28,14 @@ public class AuthListener implements Listener {
             "/giriş",
             "/register",
             "/kayitol",
-            "/kayıtol"
+            "/kayıtol",
+            "/captcha",
+            "/dogrula",
+            "/doğrula",
+            "/twofactor",
+            "/2fa",
+            "/authenticator",
+            "/authy"
     );
 
     private final Aethelguard plugin;
@@ -44,8 +53,14 @@ public class AuthListener implements Listener {
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
 
-        plugin.getUnauthenticatedPlayers().add(uuid);
         plugin.rememberPreviousLocation(player);
+
+        if (plugin.consumeValidAuthSession(player)) {
+            return;
+        }
+
+        plugin.getUnauthenticatedPlayers().add(uuid);
+        plugin.hideInventoryForAuth(player);
 
         if (plugin.getConfig().getBoolean("auth-settings.teleport-to-void", true)) {
             player.teleport(plugin.getVoidLocation(player));
@@ -55,6 +70,7 @@ public class AuthListener implements Listener {
         }
 
         plugin.applyAuthEffects(player);
+        plugin.startCaptcha(player);
         startAuthPrompts(player);
         startAuthTimeout(player);
     }
@@ -63,9 +79,12 @@ public class AuthListener implements Listener {
         if (!plugin.getConfig().getBoolean("auth-settings.prompts.enabled", true)) return;
 
         long initialDelay = plugin.getConfig().getLong("auth-settings.prompts.initial-delay-ticks", 20L);
-        long interval = plugin.getConfig().getLong("auth-settings.prompts.interval-ticks", 100L);
 
         new BukkitRunnable() {
+            private long nextPromptAt = 0L;
+            private String lastState = "";
+            private final Set<String> sentOnceStates = new HashSet<>();
+
             @Override
             public void run() {
                 if (!player.isOnline()) {
@@ -74,14 +93,65 @@ public class AuthListener implements Listener {
                 }
 
                 if (plugin.isAuthenticated(player)) {
+                    plugin.hideAuthBossBar(player);
                     this.cancel();
                     return;
                 }
 
-                boolean isRegistered = plugin.isAccountRegistered(player.getUniqueId());
-                plugin.sendMessage(player, isRegistered ? "messages.login-prompt" : "messages.register-prompt", true);
+                plugin.updateAuthBossBar(player);
+
+                String state = getPromptState(player);
+                long now = System.currentTimeMillis();
+                if (!state.equals(lastState)) {
+                    lastState = state;
+                    nextPromptAt = now;
+                }
+
+                if (now < nextPromptAt) {
+                    return;
+                }
+
+                boolean repeatEnabled = plugin.getConfig().getBoolean("auth-settings.prompts." + state + "-repeat-enabled", true);
+                if (!repeatEnabled && sentOnceStates.contains(state)) {
+                    return;
+                }
+
+                sendPromptForState(player, state);
+                sentOnceStates.add(state);
+
+                long interval = getPromptIntervalTicks(state);
+                nextPromptAt = now + ticksToMillis(interval);
             }
-        }.runTaskTimer(plugin, initialDelay, interval);
+        }.runTaskTimer(plugin, initialDelay, 20L);
+    }
+
+    private String getPromptState(Player player) {
+        if (plugin.isCaptchaRequired(player)) {
+            return "captcha";
+        }
+        return plugin.isAccountRegistered(player.getUniqueId()) ? "login" : "register";
+    }
+
+    private void sendPromptForState(Player player, String state) {
+        switch (state) {
+            case "captcha" -> plugin.sendCaptchaPrompt(player);
+            case "login" -> plugin.sendMessage(player, "messages.login-prompt", true);
+            case "register" -> plugin.sendMessage(player, "messages.register-prompt", true);
+            default -> {
+            }
+        }
+    }
+
+    private long getPromptIntervalTicks(String state) {
+        String path = "auth-settings.prompts." + state + "-interval-ticks";
+        if (plugin.getConfig().contains(path)) {
+            return Math.max(20L, plugin.getConfig().getLong(path, 200L));
+        }
+        return Math.max(20L, plugin.getConfig().getLong("auth-settings.prompts.interval-ticks", 200L));
+    }
+
+    private long ticksToMillis(long ticks) {
+        return Math.max(1L, ticks) * 50L;
     }
 
     private void startAuthTimeout(Player player) {
@@ -91,11 +161,15 @@ public class AuthListener implements Listener {
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
             if (!player.isOnline() || plugin.isAuthenticated(player)) return;
 
-            plugin.logInfo("§e" + player.getName() + " giriş yapmadığı için zaman aşımından dolayı sunucudan atıldı.",
-                    "§e" + player.getName() + " was kicked due to authentication timeout.");
+            plugin.logInfo(
+                    player.getName() + " giriş yapmadığı için zaman aşımından dolayı sunucudan atıldı.",
+                    player.getName() + " was kicked due to authentication timeout."
+            );
 
             if (plugin.getConfig().getBoolean("auth-settings.timeout.kick", true)) {
                 plugin.restorePreviousLocation(player);
+                plugin.restoreAuthInventory(player);
+                plugin.hideAuthBossBar(player);
                 player.kickPlayer(plugin.getRawStringMessage("messages.timeout-kick", true));
             }
         }, timeoutTicks);
@@ -109,14 +183,33 @@ public class AuthListener implements Listener {
 
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
-        if (!plugin.isAuthenticated(player)) {
+        boolean authenticated = plugin.isAuthenticated(player);
+        if (authenticated) {
+            plugin.updateAccountSnapshot(player, false);
+            if (plugin.getConfig().getBoolean("console-logging.log-auth-state-changes", true)) {
+                plugin.logInfo(
+                        player.getName() + " giriş yapmış durumdayken oyundan çıktı.",
+                        player.getName() + " left the game while authenticated."
+                );
+            }
+        } else {
             plugin.restorePreviousLocation(player);
+            plugin.restoreAuthInventory(player);
+            if (plugin.getConfig().getBoolean("console-logging.log-auth-state-changes", true)) {
+                plugin.logInfo(
+                        player.getName() + " giriş yapmadan oyundan çıktı.",
+                        player.getName() + " left the game before authentication."
+                );
+            }
         }
 
         plugin.getLoggedInPlayers().remove(uuid);
         plugin.getUnauthenticatedPlayers().remove(uuid);
         plugin.getPreviousLocations().remove(uuid);
         plugin.getWrongPasswordAttempts().remove(uuid);
+        plugin.clearCaptchaState(uuid);
+        plugin.clearTwoFactorState(uuid);
+        plugin.hideAuthBossBar(player);
     }
 
     @EventHandler
@@ -169,10 +262,19 @@ public class AuthListener implements Listener {
         String commandName = switch (label) {
             case "login", "giris", "giriş" -> "login";
             case "register", "kayitol", "kayıtol" -> "register";
+            case "captcha", "dogrula", "doğrula" -> "captcha";
+            case "twofactor", "2fa", "authenticator", "authy" -> "twofactor";
             default -> null;
         };
 
         if (commandName == null) return;
+
+        if ((commandName.equals("login") || commandName.equals("register")) && plugin.isCaptchaRequired(event.getPlayer())) {
+            event.setCancelled(true);
+            plugin.sendMessage(event.getPlayer(), "messages.captcha-required-before-auth", true);
+            plugin.sendCaptchaPrompt(event.getPlayer());
+            return;
+        }
 
         PluginCommand command = plugin.getCommand(commandName);
         if (command == null) return;
@@ -183,10 +285,28 @@ public class AuthListener implements Listener {
         }
 
         event.setCancelled(true);
-        new AuthCommand(plugin).onCommand(event.getPlayer(), command, label, args);
+        if (commandName.equals("captcha")) {
+            new CaptchaCommand(plugin).onCommand(event.getPlayer(), command, label, args);
+        } else if (commandName.equals("twofactor")) {
+            new TwoFactorCommand(plugin).onCommand(event.getPlayer(), command, label, args);
+        } else {
+            new AuthCommand(plugin).onCommand(event.getPlayer(), command, label, args);
+        }
     }
 
     private boolean isAllowedCommand(String message) {
+        for (String captchaCommand : List.of("/captcha", "/dogrula", "/doğrula")) {
+            if (message.equals(captchaCommand) || message.startsWith(captchaCommand + " ")) {
+                return true;
+            }
+        }
+
+        for (String twoFactorCommand : List.of("/twofactor", "/2fa", "/authenticator", "/authy")) {
+            if (message.equals(twoFactorCommand) || message.startsWith(twoFactorCommand + " ")) {
+                return true;
+            }
+        }
+
         List<String> allowedCommands = plugin.getConfig().getStringList("auth-settings.commands.allowed");
         if (allowedCommands.isEmpty()) {
             allowedCommands = DEFAULT_ALLOWED_COMMANDS;

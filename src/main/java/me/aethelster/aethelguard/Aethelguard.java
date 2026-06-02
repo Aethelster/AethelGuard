@@ -2,23 +2,48 @@ package me.aethelster.aethelguard;
 
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import net.kyori.adventure.title.Title;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Registry;
 import org.bukkit.Sound;
 import org.bukkit.World;
+import org.bukkit.boss.BarColor;
+import org.bukkit.boss.BarStyle;
+import org.bukkit.boss.BossBar;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.inventory.meta.MapMeta;
+import org.bukkit.map.MapCanvas;
+import org.bukkit.map.MapRenderer;
+import org.bukkit.map.MapView;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.text.SimpleDateFormat;
+import java.time.Duration;
 import java.util.*;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import java.util.logging.Filter;
 import java.util.logging.Handler;
 import java.util.logging.LogManager;
@@ -32,6 +57,15 @@ public final class Aethelguard extends JavaPlugin {
     private final Set<UUID> unauthenticatedPlayers = new HashSet<>();
     private final Map<UUID, Integer> wrongPasswordAttempts = new HashMap<>();
     private final Set<UUID> loggedInPlayers = new HashSet<>();
+    private final Map<UUID, AuthSession> authSessions = new HashMap<>();
+    private final Map<UUID, CaptchaChallenge> captchaChallenges = new HashMap<>();
+    private final Set<UUID> captchaVerifiedPlayers = new HashSet<>();
+    private final Map<UUID, Long> captchaCooldowns = new HashMap<>();
+    private final Set<UUID> pendingTwoFactorPlayers = new HashSet<>();
+    private final Map<UUID, String> pendingTwoFactorSetups = new HashMap<>();
+    private final Map<UUID, AuthInventorySnapshot> authInventories = new HashMap<>();
+    private final Map<UUID, BossBar> authBossBars = new HashMap<>();
+    private final SecureRandom random = new SecureRandom();
     private static final Map<String, String> COLOR_MAP = Map.ofEntries(
             Map.entry("&0", "<black>"),
             Map.entry("&1", "<dark_blue>"),
@@ -232,14 +266,122 @@ public final class Aethelguard extends JavaPlugin {
         }
     }
 
+    public void hideInventoryForAuth(Player player) {
+        UUID uuid = player.getUniqueId();
+        if (authInventories.containsKey(uuid)) return;
+
+        PlayerInventory inventory = player.getInventory();
+        authInventories.put(uuid, new AuthInventorySnapshot(
+                cloneItems(inventory.getStorageContents()),
+                cloneItems(inventory.getArmorContents()),
+                cloneItems(inventory.getExtraContents())
+        ));
+
+        inventory.clear();
+        inventory.setArmorContents(new ItemStack[4]);
+        inventory.setExtraContents(new ItemStack[inventory.getExtraContents().length]);
+        player.updateInventory();
+    }
+
+    public void restoreAuthInventory(Player player) {
+        AuthInventorySnapshot snapshot = authInventories.remove(player.getUniqueId());
+        if (snapshot == null) return;
+
+        PlayerInventory inventory = player.getInventory();
+        inventory.clear();
+        inventory.setStorageContents(cloneItems(snapshot.storage()));
+        inventory.setArmorContents(cloneItems(snapshot.armor()));
+        inventory.setExtraContents(cloneItems(snapshot.extra()));
+        player.updateInventory();
+    }
+
+    public void discardAuthInventory(Player player) {
+        authInventories.remove(player.getUniqueId());
+    }
+
+    private ItemStack[] cloneItems(ItemStack[] items) {
+        ItemStack[] cloned = new ItemStack[items.length];
+        for (int i = 0; i < items.length; i++) {
+            cloned[i] = items[i] == null ? null : items[i].clone();
+        }
+        return cloned;
+    }
+
+    public void updateAuthBossBar(Player player) {
+        if (isAuthenticated(player) || !unauthenticatedPlayers.contains(player.getUniqueId())) {
+            hideAuthBossBar(player);
+            return;
+        }
+
+        if (!getConfig().getBoolean("auth-settings.bossbar.enabled", true)) {
+            hideAuthBossBar(player);
+            return;
+        }
+
+        BossBar bossBar = authBossBars.computeIfAbsent(player.getUniqueId(), uuid -> {
+            BossBar created = getServer().createBossBar("", getBossBarColor(), getBossBarStyle());
+            created.addPlayer(player);
+            return created;
+        });
+
+        if (!bossBar.getPlayers().contains(player)) {
+            bossBar.addPlayer(player);
+        }
+
+        bossBar.setColor(getBossBarColor());
+        bossBar.setStyle(getBossBarStyle());
+        bossBar.setProgress(Math.max(0.0, Math.min(1.0, getConfig().getDouble("auth-settings.bossbar.progress", 1.0))));
+        bossBar.setTitle(getRawStringMessage(getAuthBossBarMessagePath(player), false));
+        bossBar.setVisible(true);
+    }
+
+    public void hideAuthBossBar(Player player) {
+        BossBar bossBar = authBossBars.remove(player.getUniqueId());
+        if (bossBar == null) return;
+        bossBar.removePlayer(player);
+        bossBar.setVisible(false);
+    }
+
+    private String getAuthBossBarMessagePath(Player player) {
+        if (isCaptchaRequired(player)) {
+            return "messages.bossbar-captcha";
+        }
+        if (isWaitingTwoFactor(player)) {
+            return "messages.bossbar-two-factor";
+        }
+        return isAccountRegistered(player.getUniqueId())
+                ? "messages.bossbar-login"
+                : "messages.bossbar-register";
+    }
+
+    private BarColor getBossBarColor() {
+        try {
+            return BarColor.valueOf(getConfig().getString("auth-settings.bossbar.color", "YELLOW").toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+            return BarColor.YELLOW;
+        }
+    }
+
+    private BarStyle getBossBarStyle() {
+        try {
+            return BarStyle.valueOf(getConfig().getString("auth-settings.bossbar.style", "SOLID").toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+            return BarStyle.SOLID;
+        }
+    }
+
     public void completeLogin(Player player,  boolean sendMessage) {
         unauthenticatedPlayers.remove(player.getUniqueId());
         loggedInPlayers.add(player.getUniqueId());
+        clearCaptchaState(player.getUniqueId());
+        clearTwoFactorState(player.getUniqueId());
+        hideAuthBossBar(player);
 
         clearAuthEffects(player);
 
         restorePreviousLocation(player);
         previousLocations.remove(player.getUniqueId());
+        restoreAuthInventory(player);
         clearPlayerChat(player);
 
         if (sendMessage) {
@@ -340,38 +482,26 @@ public final class Aethelguard extends JavaPlugin {
         validateConfig();
 
         if (isFirstRun) {
-            if (isTurkishConsole()) {
-                getServer().getConsoleSender().sendMessage(consolePrefix + "§b[!] Aethelguard ilk kez kuruldu! Lütfen config.yml ayarlarını kontrol edip sunucuyu tekrar başlatın.");
-            } else {
-                getServer().getConsoleSender().sendMessage(consolePrefix + "§b[!] Aethelguard installed for the first time! Please check config.yml and restart.");
-            }
+            logConfigInfo(
+                    "[!] Aethelguard ilk kez kuruldu! Lutfen config.yml ayarlarini kontrol edip sunucuyu tekrar baslatin.",
+                    "[!] Aethelguard installed for the first time! Please check config.yml and restart."
+            );
         }
 
         logInfo("Aethelguard çekirdek altyapısı kuruluyor...", "Initializing Aethelguard core infrastructure...");
 
         saveDefaultLangFiles();
         reloadLangConfig();
-        checkInternalLogStatus();
+        ensureStatusStorage();
 
-        this.databaseManager = new DatabaseManager(this);
-
-        if (getConfig().getBoolean("database.enabled", false)) {
-            logInfo("Veritabanı modu aktif, bağlantı kuruluyor...", "Database mode enabled, connecting...");
-            String host = getConfig().getString("database.host");
-            int port = getConfig().getInt("database.port");
-            String db = getConfig().getString("database.database");
-            String user = getConfig().getString("database.username");
-            String pass = getConfig().getString("database.password");
-            this.databaseManager.connect(host, port, db, user, pass);
-        } else {
-            logInfo("Veritabanı kapalı, dosya tabanlı (local) modda çalışılıyor.", "Database disabled, running in local file mode.");
-        }
+        reconnectDatabase();
 
         boolean tpVoid = getConfig().getBoolean("auth-settings.teleport-to-void", true);
         for (Player onlinePlayer : getServer().getOnlinePlayers()) {
             UUID uuid = onlinePlayer.getUniqueId();
             unauthenticatedPlayers.add(uuid);
             rememberPreviousLocation(onlinePlayer);
+            hideInventoryForAuth(onlinePlayer);
 
             if (tpVoid) {
                 Location voidLoc = getVoidLocation(onlinePlayer);
@@ -381,8 +511,16 @@ public final class Aethelguard extends JavaPlugin {
             sendMessage(onlinePlayer, "messages.plugin-reloaded-auth", true);
         }
 
-        getCommand("register").setExecutor(new AuthCommand(this));
-        getCommand("login").setExecutor(new AuthCommand(this));
+        AuthCommand authCommand = new AuthCommand(this);
+        AdminCommand adminCommand = new AdminCommand(this);
+
+        getCommand("register").setExecutor(authCommand);
+        getCommand("login").setExecutor(authCommand);
+        getCommand("changepassword").setExecutor(new PlayerPasswordCommand(this));
+        getCommand("captcha").setExecutor(new CaptchaCommand(this));
+        getCommand("twofactor").setExecutor(new TwoFactorCommand(this));
+        getCommand("aethelguard").setExecutor(adminCommand);
+        getCommand("aethelguard").setTabCompleter(adminCommand);
         getServer().getPluginManager().registerEvents(new AuthListener(this), this);
         getServer().getPluginManager().registerEvents(new ChatListener(this), this);
 
@@ -397,19 +535,96 @@ public final class Aethelguard extends JavaPlugin {
             if (player != null) {
                 clearAuthEffects(player);
                 restorePreviousLocation(player);
+                restoreAuthInventory(player);
+                hideAuthBossBar(player);
             }
         }
         if (databaseManager != null) databaseManager.close();
     }
 
+    public boolean reloadPluginSettings() {
+        try {
+            reloadConfig();
+            validateConfig();
+            saveDefaultLangFiles();
+            reloadLangConfig();
+            ensureStatusStorage();
+            reconnectDatabase();
+            refreshOnlineAccountSnapshots();
+
+            logInfo("Aethelguard ayarları yeniden yüklendi.", "Aethelguard settings reloaded.");
+            return true;
+        } catch (Exception e) {
+            logWarning("Ayarlar yeniden yüklenirken hata oluştu.", "An error occurred while reloading settings.");
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    private void reconnectDatabase() {
+        if (databaseManager != null) {
+            databaseManager.close();
+        }
+
+        this.databaseManager = new DatabaseManager(this);
+
+        if (getConfig().getBoolean("database.enabled", false)) {
+            logInfo("Veritabanı modu aktif, bağlantı kuruluyor...", "Database mode enabled, connecting...");
+            String host = getConfig().getString("database.host");
+            int port = getConfig().getInt("database.port");
+            String db = getConfig().getString("database.database");
+            String user = getConfig().getString("database.username");
+            String pass = getConfig().getString("database.password");
+            this.databaseManager.connect(host, port, db, user, pass);
+        } else {
+            logInfo("Veritabanı kapalı, dosya tabanlı (local) modda çalışılıyor.", "Database disabled, running in local file mode.");
+        }
+    }
+
+    private void refreshOnlineAccountSnapshots() {
+        for (Player player : getServer().getOnlinePlayers()) {
+            if (isAuthenticated(player)) {
+                updateAccountSnapshot(player, false);
+            }
+        }
+    }
+
     public void validateConfig() {
         boolean changed = false;
+        List<String> addedConfigKeys = new ArrayList<>();
+
+        if (!getConfig().isSet("auth-settings.captcha.kick-enabled")
+                && getConfig().isSet("auth-settings.captcha.kick-on-fail")) {
+            getConfig().set("auth-settings.captcha.kick-enabled",
+                    getConfig().getBoolean("auth-settings.captcha.kick-on-fail", true));
+            addedConfigKeys.add("auth-settings.captcha.kick-enabled");
+            changed = true;
+        }
+
+        if (getConfig().isSet("auth-settings.prompts.interval-ticks")) {
+            long legacyPromptInterval = getConfig().getLong("auth-settings.prompts.interval-ticks", 200L);
+            if (!getConfig().isSet("auth-settings.prompts.captcha-interval-ticks")) {
+                getConfig().set("auth-settings.prompts.captcha-interval-ticks", legacyPromptInterval);
+                addedConfigKeys.add("auth-settings.prompts.captcha-interval-ticks");
+                changed = true;
+            }
+            if (!getConfig().isSet("auth-settings.prompts.login-interval-ticks")) {
+                getConfig().set("auth-settings.prompts.login-interval-ticks", legacyPromptInterval);
+                addedConfigKeys.add("auth-settings.prompts.login-interval-ticks");
+                changed = true;
+            }
+            if (!getConfig().isSet("auth-settings.prompts.register-interval-ticks")) {
+                getConfig().set("auth-settings.prompts.register-interval-ticks", legacyPromptInterval);
+                addedConfigKeys.add("auth-settings.prompts.register-interval-ticks");
+                changed = true;
+            }
+        }
+
         Map<String, Object> defaults = Map.ofEntries(
                 Map.entry("console-language", "en"),
+                Map.entry("console-text-mode", "ascii"),
                 Map.entry("default-language", "TR"),
                 Map.entry("prefix", "<yellow>[Aethelguard] </yellow>"),
-                Map.entry("local-logging.enabled", true),
-                Map.entry("local-logging.folder", "internal"),
                 Map.entry("database.enabled", false),
                 Map.entry("database.host", "localhost"),
                 Map.entry("database.port", 3306),
@@ -429,6 +644,31 @@ public final class Aethelguard extends JavaPlugin {
                 Map.entry("auth-settings.apply-blindness", true),
                 Map.entry("auth-settings.clear-chat-on-auth", true),
                 Map.entry("auth-settings.log-unauthenticated-command-attempts", true),
+                Map.entry("auth-settings.registration.ip-limit.enabled", true),
+                Map.entry("auth-settings.registration.ip-limit.max-accounts", 2),
+                Map.entry("auth-settings.registration.ip-limit.bypass-permission", "aethelguard.bypass.iplimit"),
+                Map.entry("auth-settings.captcha.enabled", true),
+                Map.entry("auth-settings.captcha.types", List.of("MAP")),
+                Map.entry("auth-settings.captcha.length", 5),
+                Map.entry("auth-settings.captcha.case-sensitive", false),
+                Map.entry("auth-settings.captcha.timeout-seconds", 60),
+                Map.entry("auth-settings.captcha.cooldown-seconds", 2),
+                Map.entry("auth-settings.captcha.max-attempts", 5),
+                Map.entry("auth-settings.captcha.kick-enabled", true),
+                Map.entry("auth-settings.captcha.map.give-item", true),
+                Map.entry("auth-settings.captcha.map.item-name", "<yellow>Captcha"),
+                Map.entry("auth-settings.captcha.success-sound.enabled", true),
+                Map.entry("auth-settings.captcha.success-sound.sound", "entity.experience_orb.pickup"),
+                Map.entry("auth-settings.captcha.success-sound.volume", 1.0),
+                Map.entry("auth-settings.captcha.success-sound.pitch", 1.4),
+                Map.entry("auth-settings.captcha.success-sound.repeat-times", 1),
+                Map.entry("auth-settings.captcha.success-sound.repeat-interval-ticks", 1),
+                Map.entry("auth-settings.two-factor.enabled", true),
+                Map.entry("auth-settings.two-factor.issuer", "Aethelguard"),
+                Map.entry("auth-settings.two-factor.code-window", 1),
+                Map.entry("auth-settings.sessions.enabled", true),
+                Map.entry("auth-settings.sessions.duration-minutes", 10),
+                Map.entry("auth-settings.sessions.match-ip", true),
                 Map.entry("auth-settings.void-zone.x", 0.0),
                 Map.entry("auth-settings.void-zone.y", 1000.0),
                 Map.entry("auth-settings.void-zone.z", 0.0),
@@ -440,7 +680,16 @@ public final class Aethelguard extends JavaPlugin {
                 Map.entry("auth-settings.effects.locked-time", 18000),
                 Map.entry("auth-settings.prompts.enabled", true),
                 Map.entry("auth-settings.prompts.initial-delay-ticks", 20),
-                Map.entry("auth-settings.prompts.interval-ticks", 100),
+                Map.entry("auth-settings.prompts.captcha-repeat-enabled", true),
+                Map.entry("auth-settings.prompts.captcha-interval-ticks", 200),
+                Map.entry("auth-settings.prompts.login-repeat-enabled", true),
+                Map.entry("auth-settings.prompts.login-interval-ticks", 200),
+                Map.entry("auth-settings.prompts.register-repeat-enabled", true),
+                Map.entry("auth-settings.prompts.register-interval-ticks", 200),
+                Map.entry("auth-settings.bossbar.enabled", true),
+                Map.entry("auth-settings.bossbar.color", "YELLOW"),
+                Map.entry("auth-settings.bossbar.style", "SOLID"),
+                Map.entry("auth-settings.bossbar.progress", 1.0),
                 Map.entry("auth-settings.timeout.enabled", true),
                 Map.entry("auth-settings.timeout.ticks", 1200),
                 Map.entry("auth-settings.timeout.kick", true),
@@ -450,7 +699,7 @@ public final class Aethelguard extends JavaPlugin {
                 Map.entry("auth-settings.restrictions.prevent-block-place", true),
                 Map.entry("auth-settings.restrictions.prevent-chat", true),
                 Map.entry("auth-settings.restrictions.hide-chat-from-unauthenticated", true),
-                Map.entry("auth-settings.commands.allowed", List.of("/login", "/giris", "/giriş", "/register", "/kayitol", "/kayıtol")),
+                Map.entry("auth-settings.commands.allowed", List.of("/login", "/giris", "/giriş", "/register", "/kayitol", "/kayıtol", "/captcha", "/dogrula", "/doğrula", "/twofactor", "/2fa", "/authenticator", "/authy")),
                 Map.entry("auth-settings.wrong-password.max-attempts", 3),
                 Map.entry("auth-settings.wrong-password.kick-enabled", true),
                 Map.entry("auth-settings.sounds.enabled", true),
@@ -472,21 +721,29 @@ public final class Aethelguard extends JavaPlugin {
                 Map.entry("auth-settings.sounds.wrong-password.pitch", 1.0),
                 Map.entry("auth-settings.sounds.wrong-password.repeat-times", 1),
                 Map.entry("auth-settings.sounds.wrong-password.repeat-interval-ticks", 4),
-                Map.entry("local-logging.file-name", "users"),
-                Map.entry("local-logging.separator", "--------------------------------------------------"),
                 Map.entry("console-logging.suppress-server-connection-logs", true),
                 Map.entry("console-logging.log-auth-success", true),
+                Map.entry("console-logging.log-auth-state-changes", true),
                 Map.entry("console-logging.log-blocked-chat-attempts", true),
-                Map.entry("storage.local-users-folder", "users")
+                Map.entry("storage.local-users-folder", "users"),
+                Map.entry("status.enabled", true),
+                Map.entry("status.create-local-users-folder", true),
+                Map.entry("status.user-index-file", "user-index.txt")
         );
 
         for (Map.Entry<String, Object> entry : defaults.entrySet()) {
-            if (!getConfig().contains(entry.getKey())) {
+            if (!getConfig().isSet(entry.getKey())) {
                 logWarning("Ayarlarda eksik bulundu: " + entry.getKey() + ". Varsayılan değer atanıyor.",
                         "Missing config key: " + entry.getKey() + ". Setting default value.");
                 getConfig().set(entry.getKey(), entry.getValue());
+                addedConfigKeys.add(entry.getKey());
                 changed = true;
             }
+        }
+
+        if (getConfig().isSet("local-logging")) {
+            getConfig().set("local-logging", null);
+            changed = true;
         }
 
         List<String> allowedCommands = new ArrayList<>(getConfig().getStringList("auth-settings.commands.allowed"));
@@ -502,10 +759,220 @@ public final class Aethelguard extends JavaPlugin {
             getConfig().set("auth-settings.commands.allowed", allowedCommands);
         }
 
-        if (changed) saveConfig();
+        if (changed) {
+            saveConfig();
+        }
+
+        boolean layoutChanged = syncConfigFileLayout();
+
+        if (changed) {
+            if (!addedConfigKeys.isEmpty()) {
+                logConfigInfo(
+                        "Config kontrol edildi, eksik " + addedConfigKeys.size() + " ayar eklendi: " + String.join(", ", addedConfigKeys),
+                        "Config checked, added " + addedConfigKeys.size() + " missing setting(s): " + String.join(", ", addedConfigKeys)
+                );
+            } else {
+                logConfigInfo(
+                        "Config kontrol edildi ve gerekli temizlikler uygulandı.",
+                        "Config checked and required cleanup was applied."
+                );
+            }
+        } else if (!layoutChanged) {
+            logConfigInfo(
+                    "Config kontrol edildi, eksik ayar bulunmadı.",
+                    "Config checked, no missing settings found."
+            );
+        }
     }
 
-    public void checkInternalLogStatus() {
+    private boolean syncConfigFileLayout() {
+        File configFile = new File(getDataFolder(), "config.yml");
+        if (!configFile.exists()) return false;
+
+        try (InputStream inputStream = getResource("config.yml")) {
+            if (inputStream == null) return false;
+
+            List<String> templateLines = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))
+                    .lines()
+                    .toList();
+            List<String> currentLines = java.nio.file.Files.readAllLines(configFile.toPath(), StandardCharsets.UTF_8);
+            Set<String> movedKnownKeys = findMovedKnownConfigKeys(currentLines, templateLines);
+            List<String> syncedLines = renderConfigFromTemplate(templateLines);
+            String currentText = String.join(System.lineSeparator(), currentLines).trim();
+            String syncedText = String.join(System.lineSeparator(), syncedLines).trim();
+
+            if (currentText.equals(syncedText)) {
+                return false;
+            }
+
+            java.nio.file.Files.write(configFile.toPath(), syncedLines, StandardCharsets.UTF_8);
+            reloadConfig();
+
+            if (!movedKnownKeys.isEmpty()) {
+                logConfigInfo(
+                        "Config duzeni duzeltildi, " + movedKnownKeys.size() + " ayar dogru bolumune tasindi: " + String.join(", ", movedKnownKeys),
+                        "Config layout corrected, moved " + movedKnownKeys.size() + " setting(s) back to the correct section. "
+                );
+            } else {
+                logConfigInfo(
+                        "Config duzeni duzeltildi, yeni ayarlar yorumlariyla dogru bolume yerlestirildi.",
+                        "Config layout corrected, new settings were placed with comments in the correct section."
+                );
+            }
+            return true;
+        } catch (IOException e) {
+            logWarning("Config duzeni senkronize edilemedi.", "Could not synchronize config layout.");
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    private List<String> renderConfigFromTemplate(List<String> templateLines) {
+        List<String> rendered = new ArrayList<>();
+        Deque<ConfigPathPart> stack = new ArrayDeque<>();
+
+        for (int i = 0; i < templateLines.size(); i++) {
+            String line = templateLines.get(i);
+            ConfigLine configLine = parseConfigLine(line, stack);
+
+            if (configLine == null || configLine.path().isBlank()) {
+                rendered.add(line);
+                continue;
+            }
+
+            Object value = getConfig().get(configLine.path());
+            if (value instanceof org.bukkit.configuration.ConfigurationSection) {
+                rendered.add(line);
+                continue;
+            }
+
+            if (value instanceof List<?> list) {
+                rendered.add(configLine.indentText() + configLine.key() + ":");
+                for (Object item : list) {
+                    rendered.add(configLine.indentText() + "  - " + formatYamlValue(item));
+                }
+                i = skipTemplateChildBlock(templateLines, i, configLine.indent());
+                continue;
+            }
+
+            rendered.add(configLine.indentText() + configLine.key() + ": " + formatYamlValue(value));
+        }
+
+        if (!rendered.isEmpty()) {
+            rendered.add("");
+        }
+        return rendered;
+    }
+
+    private int skipTemplateChildBlock(List<String> lines, int index, int parentIndent) {
+        int next = index + 1;
+        while (next < lines.size()) {
+            String line = lines.get(next);
+            if (line.isBlank() || line.trim().startsWith("#")) {
+                break;
+            }
+            int indent = countIndent(line);
+            if (indent <= parentIndent) {
+                break;
+            }
+            next++;
+        }
+        return next - 1;
+    }
+
+    private Set<String> findMovedKnownConfigKeys(List<String> currentLines, List<String> templateLines) {
+        List<String> templateOrder = extractConfigPathOrder(templateLines);
+        List<String> currentOrder = extractConfigPathOrder(currentLines);
+        Set<String> templatePaths = new LinkedHashSet<>(templateOrder);
+        List<String> currentKnownOrder = currentOrder.stream()
+                .filter(templatePaths::contains)
+                .toList();
+        List<String> expectedKnownOrder = templateOrder.stream()
+                .filter(currentKnownOrder::contains)
+                .toList();
+
+        Set<String> moved = new LinkedHashSet<>();
+        int count = Math.min(currentKnownOrder.size(), expectedKnownOrder.size());
+        for (int i = 0; i < count; i++) {
+            if (!currentKnownOrder.get(i).equals(expectedKnownOrder.get(i))) {
+                moved.add(currentKnownOrder.get(i));
+            }
+        }
+        return moved;
+    }
+
+    private List<String> extractConfigPathOrder(List<String> lines) {
+        List<String> order = new ArrayList<>();
+        Deque<ConfigPathPart> stack = new ArrayDeque<>();
+        for (String line : lines) {
+            ConfigLine configLine = parseConfigLine(line, stack);
+            if (configLine != null && !configLine.path().isBlank()) {
+                order.add(configLine.path());
+            }
+        }
+        return order;
+    }
+
+    private ConfigLine parseConfigLine(String line, Deque<ConfigPathPart> stack) {
+        if (line.isBlank() || line.trim().startsWith("#") || line.trim().startsWith("-")) {
+            return null;
+        }
+
+        int colonIndex = line.indexOf(':');
+        if (colonIndex < 0) return null;
+
+        String key = line.substring(0, colonIndex).trim();
+        if (key.isBlank() || key.contains(" ")) return null;
+
+        int indent = countIndent(line);
+        while (!stack.isEmpty() && stack.peekLast().indent() >= indent) {
+            stack.removeLast();
+        }
+        stack.addLast(new ConfigPathPart(indent, key));
+
+        String path = stack.stream()
+                .map(ConfigPathPart::key)
+                .reduce((left, right) -> left + "." + right)
+                .orElse("");
+        return new ConfigLine(indent, line.substring(0, indent), key, path);
+    }
+
+    private int countIndent(String line) {
+        int indent = 0;
+        while (indent < line.length() && line.charAt(indent) == ' ') {
+            indent++;
+        }
+        return indent;
+    }
+
+    private String formatYamlValue(Object value) {
+        if (value == null) return "null";
+        if (value instanceof Boolean || value instanceof Number) {
+            return String.valueOf(value);
+        }
+        return "\"" + String.valueOf(value)
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"") + "\"";
+    }
+
+    private record ConfigPathPart(int indent, String key) {
+    }
+
+    private record ConfigLine(int indent, String indentText, String key, String path) {
+    }
+
+    public void ensureStatusStorage() {
+        if (getConfig().getBoolean("status.enabled", true)) {
+            if (!getConfig().getBoolean("database.enabled", false)
+                    && getConfig().getBoolean("status.create-local-users-folder", true)) {
+                File usersFolder = getLocalUsersFolder();
+                if (!usersFolder.exists()) usersFolder.mkdirs();
+                rebuildUserIndex();
+            }
+            return;
+        }
+        if (!getConfig().getBoolean("status.enabled", true)) return;
+
         File internalDir = new File(getDataFolder(), getSafeFolderName("local-logging.folder", "internal"));
         boolean isLocalLoggingEnabled = getConfig().getBoolean("local-logging.enabled", true);
 
@@ -527,6 +994,7 @@ public final class Aethelguard extends JavaPlugin {
     }
 
     public void writeToInternalLog(String fileName, String logData) {
+        if (getConfig().getBoolean("status.enabled", true) || !getConfig().getBoolean("status.enabled", true)) return;
         if (!getConfig().getBoolean("local-logging.enabled", true)) return;
 
         String separator = getConfig().getString("local-logging.separator", "--------------------------------------------------");
@@ -545,16 +1013,86 @@ public final class Aethelguard extends JavaPlugin {
         });
     }
 
+    public void rebuildUserIndex() {
+        if (!getConfig().getBoolean("status.enabled", true)) return;
+        if (getConfig().getBoolean("database.enabled", false)) return;
+
+        File usersFolder = getLocalUsersFolder();
+        if (!usersFolder.exists()) {
+            if (!getConfig().getBoolean("status.create-local-users-folder", true)) return;
+            usersFolder.mkdirs();
+        }
+
+        File[] files = usersFolder.listFiles((dir, name) -> name.endsWith(".yml"));
+        List<String> lines = new ArrayList<>();
+        lines.add("# Aethelguard user index");
+        lines.add("# username: uuid");
+
+        if (files != null) {
+            Arrays.sort(files, Comparator.comparing(File::getName));
+            for (File file : files) {
+                FileConfiguration userConfig = YamlConfiguration.loadConfiguration(file);
+                String username = userConfig.getString("username", "");
+                String uuid = userConfig.getString("uuid", file.getName().replace(".yml", ""));
+                if (!username.isBlank() && !uuid.isBlank()) {
+                    lines.add(username + ": " + uuid);
+                }
+            }
+        }
+
+        File indexFile = new File(usersFolder, getSafeFileName("status.user-index-file", "user-index.txt"));
+        try {
+            java.nio.file.Files.write(indexFile.toPath(), lines, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            logWarning("Kullanıcı index dosyası yazılamadı.", "Could not write user index file.");
+        }
+    }
+
+    private String getSafeFileName(String path, String fallback) {
+        String fileName = getConfig().getString(path, fallback);
+        if (fileName == null || fileName.isBlank() || fileName.contains("..") || fileName.contains("/") || fileName.contains("\\")) {
+            logWarning("Geçersiz dosya ayarı: " + path + ". Varsayılan dosya kullanılıyor.",
+                    "Invalid file config: " + path + ". Using default file.");
+            return fallback;
+        }
+        return fileName;
+    }
+
     public void logInfo(String tr, String en) {
         getServer().getConsoleSender().sendMessage(
-                consolePrefix + "§r" + (isTurkishConsole() ? tr : en)
+                consolePrefix + "§r" + getConsoleMessage(tr, en)
         );
     }
 
     public void logWarning(String tr, String en) {
         getServer().getConsoleSender().sendMessage(
-                consolePrefix + "§e[WARNING] " + (isTurkishConsole() ? tr : en)
+                consolePrefix + "§e" + getConsoleMessage(tr, en)
         );
+    }
+
+    public void logConfigInfo(String tr, String en) {
+        getServer().getConsoleSender().sendMessage(
+                consolePrefix + "§b" + getConsoleMessage(tr, en)
+        );
+    }
+
+    private String getConsoleMessage(String tr, String en) {
+        if (!isTurkishConsole()) {
+            return en;
+        }
+        return getConfig().getString("console-text-mode", "ascii").equalsIgnoreCase("native")
+                ? tr
+                : toConsoleAscii(tr);
+    }
+
+    private String toConsoleAscii(String message) {
+        return message
+                .replace('ç', 'c').replace('Ç', 'C')
+                .replace('ğ', 'g').replace('Ğ', 'G')
+                .replace('ı', 'i').replace('İ', 'I')
+                .replace('ö', 'o').replace('Ö', 'O')
+                .replace('ş', 's').replace('Ş', 'S')
+                .replace('ü', 'u').replace('Ü', 'U');
     }
 
     public void reloadLangConfig() {
@@ -587,8 +1125,12 @@ public final class Aethelguard extends JavaPlugin {
     }
 
     public void sendMessage(CommandSender sender, String path, boolean prefix) {
+        sendMessage(sender, path, prefix, Map.of());
+    }
 
-        String msg = getFormattedMessageString(path, prefix);
+    public void sendMessage(CommandSender sender, String path, boolean prefix, Map<String, String> placeholders) {
+
+        String msg = applyPlaceholders(getFormattedMessageString(path, prefix), placeholders);
 
 
 
@@ -606,8 +1148,12 @@ public final class Aethelguard extends JavaPlugin {
     }
 
     public String getRawStringMessage(String path, boolean prefix) {
+        return getRawStringMessage(path, prefix, Map.of());
+    }
+
+    public String getRawStringMessage(String path, boolean prefix, Map<String, String> placeholders) {
         return LegacyComponentSerializer.legacySection().serialize(
-                LegacyComponentSerializer.legacyAmpersand().deserialize(getFormattedMessageString(path, prefix).replace("§", "&"))
+                LegacyComponentSerializer.legacyAmpersand().deserialize(applyPlaceholders(getFormattedMessageString(path, prefix), placeholders).replace("§", "&"))
         );
     }
 
@@ -615,6 +1161,14 @@ public final class Aethelguard extends JavaPlugin {
         String msg = getLangConfig().getString(path);
         if (msg == null) return "<red>[Missing node: " + path + "]";
         return prefix ? (getConfig().getString("prefix", "<yellow>[Aethelguard] </yellow>") + msg) : msg;
+    }
+
+    private String applyPlaceholders(String message, Map<String, String> placeholders) {
+        String processed = message;
+        for (Map.Entry<String, String> entry : placeholders.entrySet()) {
+            processed = processed.replace("{" + entry.getKey() + "}", entry.getValue() == null ? "" : entry.getValue());
+        }
+        return processed;
     }
 
     public boolean isAccountRegistered(java.util.UUID uuid) {
@@ -641,8 +1195,792 @@ public final class Aethelguard extends JavaPlugin {
         return new java.io.File(getLocalUsersFolder(), uuidStr + ".yml").exists();
     }
 
+    public AccountStatus getAccountStatus(String username) {
+        return getConfig().getBoolean("database.enabled", false)
+                ? getDatabaseAccountStatus(username)
+                : getLocalAccountStatus(username);
+    }
+
+    public void updateAccountSnapshot(Player player, boolean incrementLoginCount) {
+        String uuid = player.getUniqueId().toString();
+        String now = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
+        String ipAddress = player.getAddress() == null
+                ? "UNKNOWN"
+                : player.getAddress().getAddress().getHostAddress();
+        Location location = player.getLocation();
+        String worldName = location.getWorld() == null ? "UNKNOWN" : location.getWorld().getName();
+
+        if (!getConfig().getBoolean("database.enabled", false)) {
+            File userFile = new File(getLocalUsersFolder(), uuid + ".yml");
+            if (!userFile.exists()) return;
+
+            FileConfiguration config = YamlConfiguration.loadConfiguration(userFile);
+            config.set("uuid", uuid);
+            config.set("username", player.getName());
+            if (!config.contains("created-at")) {
+                config.set("created-at", now);
+            }
+            config.set("last-login", now);
+            config.set("last-ip", ipAddress);
+            config.set("last-world", worldName);
+            config.set("last-location.x", location.getX());
+            config.set("last-location.y", location.getY());
+            config.set("last-location.z", location.getZ());
+            if (incrementLoginCount) {
+                config.set("stats.login-count", config.getInt("stats.login-count", 0) + 1);
+            }
+
+            try {
+                config.save(userFile);
+                rebuildUserIndex();
+            } catch (IOException e) {
+                logWarning("Kullanıcı snapshot kaydı yazılamadı: " + player.getName(), "Could not write user snapshot: " + player.getName());
+            }
+            return;
+        }
+
+        try (java.sql.Connection conn = getDatabaseManager().getConnection()) {
+            if (conn == null) return;
+
+            String loginCountSql = incrementLoginCount ? ", login_count = login_count + 1" : "";
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE " + getAuthTableName() +
+                            " SET username = ?, last_ip = ?, last_world = ?, last_x = ?, last_y = ?, last_z = ?" + loginCountSql +
+                            " WHERE uuid = ?;"
+            )) {
+                ps.setString(1, player.getName());
+                ps.setString(2, ipAddress);
+                ps.setString(3, worldName);
+                ps.setDouble(4, location.getX());
+                ps.setDouble(5, location.getY());
+                ps.setDouble(6, location.getZ());
+                ps.setString(7, uuid);
+                ps.executeUpdate();
+            }
+        } catch (SQLException e) {
+            logWarning("Kullanıcı snapshot kaydı veritabanına yazılamadı: " + player.getName(), "Could not write user snapshot to database: " + player.getName());
+        }
+    }
+
+    private AccountStatus getLocalAccountStatus(String username) {
+        File folder = getLocalUsersFolder();
+        File[] files = folder.listFiles((dir, name) -> name.endsWith(".yml"));
+        if (files == null) {
+            return AccountStatus.notFound(username, "Local");
+        }
+
+        for (File file : files) {
+            FileConfiguration userConfig = YamlConfiguration.loadConfiguration(file);
+            String storedName = userConfig.getString("username", "");
+            if (!storedName.equalsIgnoreCase(username)) {
+                continue;
+            }
+
+            UUID uuid = parseUuid(userConfig.getString("uuid", file.getName().replace(".yml", "")));
+            return buildAccountStatus(
+                    storedName,
+                    uuid,
+                    "Local",
+                    userConfig.getString("created-at", "-"),
+                    userConfig.getString("last-login", "-"),
+                    userConfig.getString("last-ip", "-"),
+                    userConfig.getString("last-world", "-"),
+                    formatStoredLocation(
+                            userConfig.getDouble("last-location.x", 0.0),
+                            userConfig.getDouble("last-location.y", 0.0),
+                            userConfig.getDouble("last-location.z", 0.0),
+                            userConfig.contains("last-location.x")
+                    ),
+                    userConfig.getInt("security.wrong-attempts-total", 0)
+            );
+        }
+
+        return AccountStatus.notFound(username, "Local");
+    }
+
+    private AccountStatus getDatabaseAccountStatus(String username) {
+        try (java.sql.Connection conn = getDatabaseManager().getConnection()) {
+            if (conn == null) return AccountStatus.notFound(username, "MySQL");
+
+            try (java.sql.PreparedStatement ps = conn.prepareStatement(
+                    "SELECT uuid, username, created_at, last_login, last_ip, last_world, last_x, last_y, last_z, wrong_attempts_total " +
+                            "FROM " + getAuthTableName() + " WHERE LOWER(username) = LOWER(?) LIMIT 1;"
+            )) {
+                ps.setString(1, username);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (!rs.next()) {
+                        return AccountStatus.notFound(username, "MySQL");
+                    }
+
+                    return buildAccountStatus(
+                            rs.getString("username"),
+                            parseUuid(rs.getString("uuid")),
+                            "MySQL",
+                            stringOrDash(rs.getString("created_at")),
+                            stringOrDash(rs.getString("last_login")),
+                            stringOrDash(rs.getString("last_ip")),
+                            stringOrDash(rs.getString("last_world")),
+                            formatStoredLocation(rs.getDouble("last_x"), rs.getDouble("last_y"), rs.getDouble("last_z"), rs.getObject("last_x") != null),
+                            rs.getInt("wrong_attempts_total")
+                    );
+                }
+            }
+        } catch (Exception e) {
+            logWarning("Status bilgisi okunurken hata oluştu.", "Error while reading account status.");
+            e.printStackTrace();
+            return AccountStatus.notFound(username, "MySQL");
+        }
+    }
+
+    private AccountStatus buildAccountStatus(String username, UUID uuid, String storage, String createdAt, String lastLogin, String lastIp, String lastWorld, String lastLocation, int totalWrongAttempts) {
+        Player onlinePlayer = uuid == null ? getServer().getPlayerExact(username) : getServer().getPlayer(uuid);
+        boolean online = onlinePlayer != null && onlinePlayer.isOnline();
+        boolean authenticated = uuid != null && loggedInPlayers.contains(uuid);
+        boolean waitingAuth = uuid != null && unauthenticatedPlayers.contains(uuid);
+        int currentWrongAttempts = uuid == null ? 0 : wrongPasswordAttempts.getOrDefault(uuid, 0);
+
+        return new AccountStatus(
+                true,
+                username,
+                uuid,
+                storage,
+                online,
+                authenticated,
+                waitingAuth,
+                currentWrongAttempts,
+                totalWrongAttempts,
+                stringOrDash(createdAt),
+                stringOrDash(lastLogin),
+                stringOrDash(lastIp),
+                stringOrDash(lastWorld),
+                stringOrDash(lastLocation)
+        );
+    }
+
+    private UUID parseUuid(String value) {
+        try {
+            return value == null || value.isBlank() ? null : UUID.fromString(value);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private String formatStoredLocation(double x, double y, double z, boolean hasLocation) {
+        if (!hasLocation) return "-";
+        return String.format(Locale.US, "%.2f, %.2f, %.2f", x, y, z);
+    }
+
+    private String stringOrDash(String value) {
+        return value == null || value.isBlank() ? "-" : value;
+    }
+
     public boolean isAuthenticated(Player p) {
         return loggedInPlayers.contains(p.getUniqueId());
+    }
+
+    public boolean isCaptchaRequired(Player player) {
+        return getConfig().getBoolean("auth-settings.captcha.enabled", true)
+                && unauthenticatedPlayers.contains(player.getUniqueId())
+                && !captchaVerifiedPlayers.contains(player.getUniqueId());
+    }
+
+    public void startCaptcha(Player player) {
+        if (!getConfig().getBoolean("auth-settings.captcha.enabled", true)) {
+            captchaVerifiedPlayers.add(player.getUniqueId());
+            updateAuthBossBar(player);
+            return;
+        }
+
+        CaptchaChallenge challenge = createCaptchaChallenge(player);
+        captchaChallenges.put(player.getUniqueId(), challenge);
+        if (challenge.type().equals("MAP") && getConfig().getBoolean("auth-settings.captcha.map.give-item", true)) {
+            giveCaptchaMap(player, challenge.display());
+        }
+        updateAuthBossBar(player);
+        sendCaptchaPrompt(player);
+    }
+
+    public void sendCaptchaPrompt(Player player) {
+        CaptchaChallenge challenge = captchaChallenges.get(player.getUniqueId());
+        if (challenge == null || challenge.isExpired()) {
+            startCaptcha(player);
+            return;
+        }
+
+        sendMessage(player, challenge.type().equals("MAP") ? "messages.captcha-map-prompt" : "messages.captcha-prompt", true, Map.of(
+                "type", challenge.type(),
+                "challenge", challenge.display()
+        ));
+    }
+
+    public boolean verifyCaptcha(Player player, String input) {
+        CaptchaChallenge challenge = captchaChallenges.get(player.getUniqueId());
+        if (challenge == null || challenge.isExpired()) {
+            removeCaptchaMaps(player);
+            startCaptcha(player);
+            sendMessage(player, "messages.captcha-expired", true);
+            return false;
+        }
+
+        boolean caseSensitive = getConfig().getBoolean("auth-settings.captcha.case-sensitive", false);
+        boolean valid = caseSensitive
+                ? challenge.answer().equals(input)
+                : challenge.answer().equalsIgnoreCase(input);
+
+        if (valid) {
+            captchaChallenges.remove(player.getUniqueId());
+            captchaVerifiedPlayers.add(player.getUniqueId());
+            removeCaptchaMaps(player);
+            playConfiguredSound(player, "auth-settings.captcha.success-sound");
+            showCaptchaSuccessPopup(player);
+            updateAuthBossBar(player);
+            return true;
+        }
+
+        CaptchaChallenge updated = challenge.failedAttempt();
+        captchaChallenges.put(player.getUniqueId(), updated);
+
+        int maxAttempts = Math.max(1, getConfig().getInt("auth-settings.captcha.max-attempts", 5));
+        if (updated.attempts() >= maxAttempts) {
+            captchaChallenges.remove(player.getUniqueId());
+            removeCaptchaMaps(player);
+            if (isCaptchaKickEnabled()) {
+                restorePreviousLocation(player);
+                restoreAuthInventory(player);
+                hideAuthBossBar(player);
+                player.kickPlayer(getRawStringMessage("messages.captcha-kick", true, Map.of(
+                        "max", String.valueOf(maxAttempts)
+                )));
+            } else {
+                startCaptcha(player);
+            }
+            return false;
+        }
+
+        sendMessage(player, "messages.captcha-wrong", true, Map.of(
+                "remaining", String.valueOf(maxAttempts - updated.attempts())
+        ));
+        return false;
+    }
+
+    private boolean isCaptchaKickEnabled() {
+        if (getConfig().isSet("auth-settings.captcha.kick-enabled")) {
+            return getConfig().getBoolean("auth-settings.captcha.kick-enabled", true);
+        }
+        return getConfig().getBoolean("auth-settings.captcha.kick-on-fail", true);
+    }
+
+    public long getCaptchaCooldownRemainingSeconds(Player player) {
+        long cooldownSeconds = Math.max(0L, getConfig().getLong("auth-settings.captcha.cooldown-seconds", 2L));
+        if (cooldownSeconds <= 0L) return 0L;
+
+        long now = System.currentTimeMillis();
+        long nextAllowed = captchaCooldowns.getOrDefault(player.getUniqueId(), 0L);
+        if (nextAllowed <= now) return 0L;
+        return (long) Math.ceil((nextAllowed - now) / 1000.0);
+    }
+
+    public void markCaptchaCooldown(Player player) {
+        long cooldownSeconds = Math.max(0L, getConfig().getLong("auth-settings.captcha.cooldown-seconds", 2L));
+        if (cooldownSeconds <= 0L) return;
+        captchaCooldowns.put(player.getUniqueId(), System.currentTimeMillis() + cooldownSeconds * 1000L);
+    }
+
+    private void showCaptchaSuccessPopup(Player player) {
+        boolean registered = isAccountRegistered(player.getUniqueId());
+        String title = getFormattedMessageString("messages.captcha-success-title", false);
+        String subtitle = getFormattedMessageString(registered ? "messages.captcha-login-popup" : "messages.captcha-register-popup", false);
+        player.showTitle(Title.title(
+                miniMessage.deserialize(title),
+                miniMessage.deserialize(subtitle),
+                Title.Times.times(Duration.ofMillis(300), Duration.ofSeconds(3), Duration.ofMillis(700))
+        ));
+    }
+
+    public boolean isWaitingTwoFactor(Player player) {
+        return pendingTwoFactorPlayers.contains(player.getUniqueId());
+    }
+
+    public boolean isTwoFactorEnabled(Player player) {
+        if (!getConfig().getBoolean("auth-settings.two-factor.enabled", true)) return false;
+        String secret = getTwoFactorSecret(player.getUniqueId());
+        return secret != null && !secret.isBlank();
+    }
+
+    public void startTwoFactorLogin(Player player) {
+        pendingTwoFactorPlayers.add(player.getUniqueId());
+        updateAuthBossBar(player);
+        sendMessage(player, "messages.two-factor-login-required", true);
+    }
+
+    public void completeTwoFactorLogin(Player player, String code) {
+        String secret = getTwoFactorSecret(player.getUniqueId());
+        if (secret == null || !verifyTotp(secret, code)) {
+            sendMessage(player, "messages.two-factor-code-invalid", true);
+            return;
+        }
+
+        pendingTwoFactorPlayers.remove(player.getUniqueId());
+        wrongPasswordAttempts.remove(player.getUniqueId());
+        completeLogin(player, true);
+        rememberAuthSession(player);
+        updateAccountSnapshot(player, true);
+
+        if (getConfig().getBoolean("console-logging.log-auth-success", true)) {
+            logInfo(
+                    player.getName() + " iki aşamalı doğrulama ile giriş yaptı.",
+                    player.getName() + " completed login with two-factor authentication."
+            );
+        }
+    }
+
+    public String createPendingTwoFactorSetup(Player player) {
+        String secret = randomBase32(32);
+        pendingTwoFactorSetups.put(player.getUniqueId(), secret);
+        return secret;
+    }
+
+    public void confirmTwoFactorSetup(Player player, String code) {
+        String secret = pendingTwoFactorSetups.get(player.getUniqueId());
+        if (secret == null) {
+            sendMessage(player, "messages.two-factor-setup-missing", true);
+            return;
+        }
+
+        if (!verifyTotp(secret, code)) {
+            sendMessage(player, "messages.two-factor-code-invalid", true);
+            return;
+        }
+
+        if (setTwoFactorSecret(player.getUniqueId(), secret)) {
+            pendingTwoFactorSetups.remove(player.getUniqueId());
+            sendMessage(player, "messages.two-factor-enabled", true);
+        } else {
+            sendMessage(player, "messages.two-factor-error", true);
+        }
+    }
+
+    public void disableTwoFactor(Player player, String code) {
+        String secret = getTwoFactorSecret(player.getUniqueId());
+        if (secret == null || secret.isBlank()) {
+            sendMessage(player, "messages.two-factor-status-disabled", true);
+            return;
+        }
+
+        if (!verifyTotp(secret, code)) {
+            sendMessage(player, "messages.two-factor-code-invalid", true);
+            return;
+        }
+
+        if (setTwoFactorSecret(player.getUniqueId(), null)) {
+            pendingTwoFactorSetups.remove(player.getUniqueId());
+            sendMessage(player, "messages.two-factor-disabled", true);
+        } else {
+            sendMessage(player, "messages.two-factor-error", true);
+        }
+    }
+
+    private String getTwoFactorSecret(UUID uuid) {
+        if (!getConfig().getBoolean("database.enabled", false)) {
+            File userFile = new File(getLocalUsersFolder(), uuid + ".yml");
+            if (!userFile.exists()) return null;
+            FileConfiguration config = YamlConfiguration.loadConfiguration(userFile);
+            return config.getBoolean("two-factor.enabled", false) ? config.getString("two-factor.secret") : null;
+        }
+
+        try (java.sql.Connection conn = getDatabaseManager().getConnection()) {
+            if (conn == null) return null;
+            try (PreparedStatement ps = conn.prepareStatement("SELECT auth_type, totp_secret FROM " + getAuthTableName() + " WHERE uuid = ?;")) {
+                ps.setString(1, uuid.toString());
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next() && "TOTP".equalsIgnoreCase(rs.getString("auth_type"))) {
+                        return rs.getString("totp_secret");
+                    }
+                }
+            }
+        } catch (SQLException ignored) {
+        }
+        return null;
+    }
+
+    private boolean setTwoFactorSecret(UUID uuid, String secret) {
+        if (!getConfig().getBoolean("database.enabled", false)) {
+            File userFile = new File(getLocalUsersFolder(), uuid + ".yml");
+            if (!userFile.exists()) return false;
+            FileConfiguration config = YamlConfiguration.loadConfiguration(userFile);
+            config.set("two-factor.enabled", secret != null);
+            config.set("two-factor.secret", secret);
+            try {
+                config.save(userFile);
+                return true;
+            } catch (IOException ignored) {
+                return false;
+            }
+        }
+
+        try (java.sql.Connection conn = getDatabaseManager().getConnection()) {
+            if (conn == null) return false;
+            try (PreparedStatement ps = conn.prepareStatement("UPDATE " + getAuthTableName() + " SET auth_type = ?, totp_secret = ? WHERE uuid = ?;")) {
+                ps.setString(1, secret == null ? "TEXT" : "TOTP");
+                ps.setString(2, secret);
+                ps.setString(3, uuid.toString());
+                return ps.executeUpdate() > 0;
+            }
+        } catch (SQLException ignored) {
+            return false;
+        }
+    }
+
+    private boolean verifyTotp(String secret, String code) {
+        if (code == null || !code.matches("\\d{6}")) return false;
+        long currentStep = System.currentTimeMillis() / 1000L / 30L;
+        int window = Math.max(0, getConfig().getInt("auth-settings.two-factor.code-window", 1));
+        for (long step = currentStep - window; step <= currentStep + window; step++) {
+            if (generateTotp(secret, step).equals(code)) return true;
+        }
+        return false;
+    }
+
+    private String generateTotp(String secret, long timeStep) {
+        try {
+            byte[] key = decodeBase32(secret);
+            byte[] data = new byte[8];
+            long value = timeStep;
+            for (int i = 7; i >= 0; i--) {
+                data[i] = (byte) (value & 0xFF);
+                value >>= 8;
+            }
+
+            Mac mac = Mac.getInstance("HmacSHA1");
+            mac.init(new SecretKeySpec(key, "HmacSHA1"));
+            byte[] hash = mac.doFinal(data);
+            int offset = hash[hash.length - 1] & 0x0F;
+            int binary = ((hash[offset] & 0x7F) << 24)
+                    | ((hash[offset + 1] & 0xFF) << 16)
+                    | ((hash[offset + 2] & 0xFF) << 8)
+                    | (hash[offset + 3] & 0xFF);
+            return String.format(Locale.US, "%06d", binary % 1_000_000);
+        } catch (Exception ignored) {
+            return "000000";
+        }
+    }
+
+    private String randomBase32(int length) {
+        return randomString("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567", length);
+    }
+
+    private byte[] decodeBase32(String value) {
+        String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        int buffer = 0;
+        int bitsLeft = 0;
+        for (char raw : value.replace("=", "").toUpperCase(Locale.ROOT).toCharArray()) {
+            int val = alphabet.indexOf(raw);
+            if (val < 0) continue;
+            buffer = (buffer << 5) | val;
+            bitsLeft += 5;
+            if (bitsLeft >= 8) {
+                output.write((buffer >> (bitsLeft - 8)) & 0xFF);
+                bitsLeft -= 8;
+            }
+        }
+        return output.toByteArray();
+    }
+
+    public void clearCaptchaState(UUID uuid) {
+        captchaChallenges.remove(uuid);
+        captchaVerifiedPlayers.remove(uuid);
+        captchaCooldowns.remove(uuid);
+    }
+
+    public void clearTwoFactorState(UUID uuid) {
+        pendingTwoFactorPlayers.remove(uuid);
+        pendingTwoFactorSetups.remove(uuid);
+    }
+
+    private CaptchaChallenge createCaptchaChallenge(Player player) {
+        List<String> types = getConfig().getStringList("auth-settings.captcha.types");
+        if (types.isEmpty()) {
+            types = List.of("MAP");
+        }
+
+        String type = types.get(random.nextInt(types.size())).toUpperCase(Locale.ROOT);
+        int length = Math.max(3, getConfig().getInt("auth-settings.captcha.length", 5));
+        long timeoutMs = Math.max(10L, getConfig().getLong("auth-settings.captcha.timeout-seconds", 60L)) * 1000L;
+        long expiresAt = System.currentTimeMillis() + timeoutMs;
+
+        return switch (type) {
+            case "NUMERIC" -> {
+                String code = randomString("0123456789", length);
+                yield new CaptchaChallenge("NUMERIC", code, code, 0, expiresAt);
+            }
+            case "ALPHANUMERIC" -> {
+                String code = randomString("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", length);
+                yield new CaptchaChallenge("ALPHANUMERIC", code, code, 0, expiresAt);
+            }
+            case "MATH" -> {
+                int left = random.nextInt(9) + 1;
+                int right = random.nextInt(9) + 1;
+                boolean plus = random.nextBoolean();
+                String question = left + (plus ? " + " : " - ") + right;
+                String answer = String.valueOf(plus ? left + right : left - right);
+                yield new CaptchaChallenge("MATH", question, answer, 0, expiresAt);
+            }
+            case "MAP" -> {
+                String code = randomString("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", length);
+                yield new CaptchaChallenge("MAP", code, code, 0, expiresAt);
+            }
+            default -> {
+                String code = randomString("ABCDEFGHJKLMNPQRSTUVWXYZ", length);
+                yield new CaptchaChallenge("TEXT", code, code, 0, expiresAt);
+            }
+        };
+    }
+
+    private String randomString(String alphabet, int length) {
+        StringBuilder builder = new StringBuilder(length);
+        for (int i = 0; i < length; i++) {
+            builder.append(alphabet.charAt(random.nextInt(alphabet.length())));
+        }
+        return builder.toString();
+    }
+
+    private void giveCaptchaMap(Player player, String code) {
+        removeCaptchaMaps(player);
+
+        MapView mapView = getServer().createMap(player.getWorld());
+        for (MapRenderer renderer : mapView.getRenderers()) {
+            mapView.removeRenderer(renderer);
+        }
+        mapView.addRenderer(new CaptchaMapRenderer(code));
+
+        ItemStack mapItem = new ItemStack(Material.FILLED_MAP);
+        MapMeta meta = (MapMeta) mapItem.getItemMeta();
+        if (meta != null) {
+            meta.setMapView(mapView);
+            meta.displayName(miniMessage.deserialize(getConfig().getString("auth-settings.captcha.map.item-name", "<yellow>Captcha")));
+            meta.getPersistentDataContainer().set(captchaMapKey(), PersistentDataType.BYTE, (byte) 1);
+            mapItem.setItemMeta(meta);
+        }
+        player.getInventory().addItem(mapItem);
+    }
+
+    private void removeCaptchaMaps(Player player) {
+        ItemStack[] contents = player.getInventory().getContents();
+        boolean changed = false;
+
+        for (int i = 0; i < contents.length; i++) {
+            ItemStack item = contents[i];
+            if (isCaptchaMap(item)) {
+                contents[i] = null;
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            player.getInventory().setContents(contents);
+        }
+    }
+
+    private boolean isCaptchaMap(ItemStack item) {
+        if (item == null || item.getType() != Material.FILLED_MAP || !(item.getItemMeta() instanceof MapMeta meta)) {
+            return false;
+        }
+        Byte marker = meta.getPersistentDataContainer().get(captchaMapKey(), PersistentDataType.BYTE);
+        return marker != null && marker == (byte) 1;
+    }
+
+    private NamespacedKey captchaMapKey() {
+        return new NamespacedKey(this, "captcha_map");
+    }
+
+    public void rememberAuthSession(Player player) {
+        if (!getConfig().getBoolean("auth-settings.sessions.enabled", true)) return;
+
+        String ipAddress = player.getAddress() == null
+                ? "UNKNOWN"
+                : player.getAddress().getAddress().getHostAddress();
+        long durationMinutes = Math.max(1L, getConfig().getLong("auth-settings.sessions.duration-minutes", 10L));
+        long expiresAt = System.currentTimeMillis() + (durationMinutes * 60_000L);
+        authSessions.put(player.getUniqueId(), new AuthSession(ipAddress, expiresAt));
+    }
+
+    public Map<UUID, String[]> getAuthSessionSummaries() {
+        removeExpiredAuthSessions();
+
+        Map<UUID, String[]> summaries = new LinkedHashMap<>();
+        SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        for (Map.Entry<UUID, AuthSession> entry : authSessions.entrySet()) {
+            AuthSession session = entry.getValue();
+            summaries.put(entry.getKey(), new String[]{
+                    session.ipAddress(),
+                    format.format(new Date(session.expiresAt()))
+            });
+        }
+        return summaries;
+    }
+
+    public boolean clearAuthSession(UUID uuid) {
+        return authSessions.remove(uuid) != null;
+    }
+
+    public int clearAllAuthSessions() {
+        int count = authSessions.size();
+        authSessions.clear();
+        return count;
+    }
+
+    private void removeExpiredAuthSessions() {
+        long now = System.currentTimeMillis();
+        authSessions.entrySet().removeIf(entry -> entry.getValue().expiresAt() < now);
+    }
+
+    public boolean consumeValidAuthSession(Player player) {
+        if (!getConfig().getBoolean("auth-settings.sessions.enabled", true)) return false;
+
+        AuthSession session = authSessions.get(player.getUniqueId());
+        if (session == null) return false;
+
+        if (session.expiresAt() < System.currentTimeMillis()) {
+            authSessions.remove(player.getUniqueId());
+            return false;
+        }
+
+        if (getConfig().getBoolean("auth-settings.sessions.match-ip", true)) {
+            String currentIp = player.getAddress() == null
+                    ? "UNKNOWN"
+                    : player.getAddress().getAddress().getHostAddress();
+            if (!session.ipAddress().equals(currentIp)) {
+                authSessions.remove(player.getUniqueId());
+                return false;
+            }
+        }
+
+        loggedInPlayers.add(player.getUniqueId());
+        unauthenticatedPlayers.remove(player.getUniqueId());
+        wrongPasswordAttempts.remove(player.getUniqueId());
+        clearAuthEffects(player);
+        restorePreviousLocation(player);
+        previousLocations.remove(player.getUniqueId());
+        restoreAuthInventory(player);
+        hideAuthBossBar(player);
+        updateAccountSnapshot(player, true);
+        sendMessage(player, "messages.session-login-success", true);
+
+        if (getConfig().getBoolean("console-logging.log-auth-success", true)) {
+            logInfo(
+                    player.getName() + " aktif oturum ile otomatik giriş yaptı.",
+                    player.getName() + " logged in automatically with an active session."
+            );
+        }
+        return true;
+    }
+
+    public void forceUnlogin(Player player) {
+        loggedInPlayers.remove(player.getUniqueId());
+        unauthenticatedPlayers.add(player.getUniqueId());
+        wrongPasswordAttempts.remove(player.getUniqueId());
+        authSessions.remove(player.getUniqueId());
+        rememberPreviousLocation(player);
+        hideInventoryForAuth(player);
+
+        if (getConfig().getBoolean("auth-settings.teleport-to-void", true)) {
+            player.teleport(getVoidLocation(player));
+            sendMessage(player, "messages.secure-void-zone", true);
+        }
+
+        applyAuthEffects(player);
+        startCaptcha(player);
+    }
+
+    private record AuthInventorySnapshot(ItemStack[] storage, ItemStack[] armor, ItemStack[] extra) {
+    }
+
+    private record CaptchaChallenge(String type, String display, String answer, int attempts, long expiresAt) {
+        private boolean isExpired() {
+            return expiresAt < System.currentTimeMillis();
+        }
+
+        private CaptchaChallenge failedAttempt() {
+            return new CaptchaChallenge(type, display, answer, attempts + 1, expiresAt);
+        }
+    }
+
+    private static class CaptchaMapRenderer extends MapRenderer {
+        private final String code;
+        private boolean rendered;
+
+        private CaptchaMapRenderer(String code) {
+            this.code = code;
+        }
+
+        @Override
+        public void render(MapView map, MapCanvas canvas, Player player) {
+            if (rendered) return;
+
+            BufferedImage image = new BufferedImage(128, 128, BufferedImage.TYPE_INT_RGB);
+            Graphics2D graphics = image.createGraphics();
+            Random seededRandom = new Random(code.hashCode() * 31L + 17L);
+
+            graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            graphics.setColor(new Color(238, 241, 228));
+            graphics.fillRect(0, 0, 128, 128);
+
+            for (int i = 0; i < 250; i++) {
+                graphics.setColor(new Color(
+                        120 + seededRandom.nextInt(120),
+                        120 + seededRandom.nextInt(120),
+                        120 + seededRandom.nextInt(120),
+                        100 + seededRandom.nextInt(120)
+                ));
+                int x = seededRandom.nextInt(128);
+                int y = seededRandom.nextInt(128);
+                graphics.fillRect(x, y, 1 + seededRandom.nextInt(2), 1 + seededRandom.nextInt(2));
+            }
+
+            for (int i = 0; i < 11; i++) {
+                graphics.setColor(new Color(
+                        30 + seededRandom.nextInt(180),
+                        30 + seededRandom.nextInt(180),
+                        30 + seededRandom.nextInt(180)
+                ));
+                graphics.drawLine(
+                        seededRandom.nextInt(128),
+                        seededRandom.nextInt(128),
+                        seededRandom.nextInt(128),
+                        seededRandom.nextInt(128)
+                );
+            }
+
+            graphics.setFont(new Font("Serif", Font.BOLD | Font.ITALIC, 30));
+            FontMetrics metrics = graphics.getFontMetrics();
+            int totalWidth = metrics.stringWidth(code);
+            int startX = Math.max(8, (128 - totalWidth) / 2);
+
+            for (int i = 0; i < code.length(); i++) {
+                char character = code.charAt(i);
+                int charX = startX + i * Math.max(18, totalWidth / Math.max(1, code.length()));
+                int charY = 72 + seededRandom.nextInt(14) - 7;
+                double angle = Math.toRadians(seededRandom.nextInt(35) - 17);
+
+                graphics.rotate(angle, charX, charY);
+                graphics.setColor(new Color(
+                        20 + seededRandom.nextInt(120),
+                        20 + seededRandom.nextInt(120),
+                        20 + seededRandom.nextInt(120)
+                ));
+                graphics.drawString(String.valueOf(character), charX, charY);
+                graphics.rotate(-angle, charX, charY);
+            }
+
+            graphics.dispose();
+
+            canvas.drawImage(0, 0, image);
+            rendered = true;
+        }
+    }
+
+    private record AuthSession(String ipAddress, long expiresAt) {
     }
 
     public MiniMessage getMiniMessage() { return miniMessage; }

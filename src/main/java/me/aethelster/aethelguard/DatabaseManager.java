@@ -61,7 +61,17 @@ public class DatabaseManager {
                 "auth_type VARCHAR(20) DEFAULT 'TEXT'," +
                 "pin_code VARCHAR(6) DEFAULT NULL," +
                 "totp_secret VARCHAR(32) DEFAULT NULL," +
-                "last_login TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP," +
+                "last_login TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP," +
+                "registration_ip VARCHAR(45) DEFAULT NULL," +
+                "last_ip VARCHAR(45) DEFAULT NULL," +
+                "last_world VARCHAR(64) DEFAULT NULL," +
+                "last_x DOUBLE DEFAULT NULL," +
+                "last_y DOUBLE DEFAULT NULL," +
+                "last_z DOUBLE DEFAULT NULL," +
+                "login_count INT DEFAULT 0," +
+                "wrong_attempts_total INT DEFAULT 0," +
+                "last_wrong_attempt VARCHAR(32) DEFAULT NULL" +
                 ");";
 
         try (Connection conn = getConnection()) {
@@ -69,11 +79,34 @@ public class DatabaseManager {
 
             try (Statement stmt = conn.createStatement()) {
                 stmt.execute(authTable);
+                migrateAuthTable(stmt);
                 plugin.logInfo("§aVeri tabanı tabloları kontrol edildi ve hazırlandı.", "§aDatabase tables checked and verified.");
             }
         } catch (SQLException e) {
             plugin.logWarning("Tablolar oluşturulurken SQL hatası çıktı!", "SQL error occurred while creating tables!");
             e.printStackTrace();
+        }
+    }
+
+    private void migrateAuthTable(Statement stmt) {
+        String table = plugin.getAuthTableName();
+        addColumnIfMissing(stmt, table, "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
+        addColumnIfMissing(stmt, table, "registration_ip VARCHAR(45) DEFAULT NULL");
+        addColumnIfMissing(stmt, table, "last_ip VARCHAR(45) DEFAULT NULL");
+        addColumnIfMissing(stmt, table, "last_world VARCHAR(64) DEFAULT NULL");
+        addColumnIfMissing(stmt, table, "last_x DOUBLE DEFAULT NULL");
+        addColumnIfMissing(stmt, table, "last_y DOUBLE DEFAULT NULL");
+        addColumnIfMissing(stmt, table, "last_z DOUBLE DEFAULT NULL");
+        addColumnIfMissing(stmt, table, "login_count INT DEFAULT 0");
+        addColumnIfMissing(stmt, table, "wrong_attempts_total INT DEFAULT 0");
+        addColumnIfMissing(stmt, table, "last_wrong_attempt VARCHAR(32) DEFAULT NULL");
+    }
+
+    private void addColumnIfMissing(Statement stmt, String table, String columnSql) {
+        try {
+            stmt.executeUpdate("ALTER TABLE " + table + " ADD COLUMN " + columnSql + ";");
+        } catch (SQLException ignored) {
+            // Existing columns are expected after the first migration run.
         }
     }
 

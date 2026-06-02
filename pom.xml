@@ -6,7 +6,7 @@
 
     <groupId>me.aethelster</groupId>
     <artifactId>aethelguard</artifactId>
-    <version>0.2-sentinel</version>
+    <version>0.2.5-dev</version>
     <packaging>jar</packaging>
 
     <name>aethelguard</name>
@@ -38,6 +38,32 @@
                         <goals>
                             <goal>shade</goal>
                         </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>organize-jars</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${project.basedir}/jars/main-jars" />
+                                <mkdir dir="${project.basedir}/jars/original-jars" />
+                                <copy todir="${project.basedir}/jars/main-jars" overwrite="true">
+                                    <fileset dir="${project.build.directory}" includes="${project.build.finalName}.jar" />
+                                </copy>
+                                <copy todir="${project.basedir}/jars/original-jars" overwrite="true">
+                                    <fileset dir="${project.build.directory}" includes="original-*.jar" />
+                                </copy>
+                            </target>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>

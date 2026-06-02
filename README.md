@@ -1,128 +1,206 @@
 # Aethelguard
 
-> **0.2-sentinel Release** - temiz loglar, güvenli auth akışı ve daha fazla özelleştirme için hazırlanmış tam 0.2 sürümü.
+> Paper tabanlı Minecraft sunucuları için temiz loglu, özelleştirilebilir ve güvenli bir auth eklentisi.
 
-**Aethelguard**, Paper tabanlı Minecraft sunucuları için hazırlanmış, sade ama güçlü bir auth eklentisidir. Oyuncular sunucuya girdiğinde `/login` veya `/register` ile doğrulanana kadar güvenli bir bekleme alanında tutulur; giriş tamamlanınca da temiz ve kontrollü şekilde oyuna devam ederler.
+Aethelguard, oyuncular sunucuya girdiğinde onları doğrulama tamamlanana kadar kontrollü bir güvenlik ekranında tutar. Oyuncu captcha, login, register veya 2FA aşamasındayken dünyaya, chate ve riskli komutlara erişemez; doğrulama tamamlandığında da kaldığı yerden güvenli şekilde oyuna döner.
 
-Bu proje özellikle “oyuncu giriş yapmadan dünyaya, chate veya komutlara erişmesin; ama bunu yaparken sunucu logları da tertemiz kalsın” ihtiyacı için geliştirildi. ⚔️
+Amaç basit: Auth sistemi güçlü olsun, console temiz kalsın, sunucu sahibi de neredeyse her davranışı configten rahatça ayarlayabilsin. ✨
 
-## ✨ Öne Çıkanlar
+## 🚀 Neler Sunar?
 
 - 🔐 `/register` ve `/login` tabanlı hesap sistemi
 - 🧂 BCrypt ile güvenli şifre hashleme
-- 💾 Local YAML veya MySQL depolama seçeneği
-- 🌍 Giriş yapmamış oyuncuları void-zone alanında bekletme
-- 📍 Login sonrası oyuncuyu son güvenli konumuna döndürme
-- 🏠 İlk register sonrası oyuncuyu spawn noktasına gönderme
-- 🧼 Login/register sonrası oyuncunun kendi chat ekranını temizleme
+- 💾 Local YAML veya MySQL depolama
+- 🧩 `/aethelguard status` ile detaylı oyuncu auth bilgileri
+- 🛡️ Captcha sistemi: map, text, numeric, alphanumeric ve math türleri
+- 🗺️ Varsayılan map captcha desteği
+- 📱 TOTP tabanlı 2FA: Google Authenticator, Microsoft Authenticator, Authy ve benzeri uygulamalarla uyumlu
+- 🔁 Session auto-login desteği
+- 🌍 Login/register öncesi oyuncuyu void-zone alanına alma
+- 📍 Login sonrası son güvenli konuma geri döndürme
+- 🏠 İlk register sonrası spawn noktasına gönderme
+- 🎒 Auth ekranında oyuncunun envanterini, zırhını ve offhand itemini gizleme
+- 🧼 Auth sonrası oyuncunun kendi chat ekranını temizleme
 - 💬 Login ekranındaki oyuncuların normal chati görmesini engelleme
-- 🚫 Auth olmadan hareket, hasar, chat, blok kırma/yerleştirme gibi aksiyonları kısıtlama
-- 🔇 Vanilla join/quit, connection ve komut loglarını susturma
-- 📝 Sadece başarılı login/register işlemleri için temiz Aethelguard logları basma
-- 🎵 Başarılı giriş, kayıt ve hatalı şifre seslerini config üzerinden yönetme
-- 🌐 `messages_<dil>.yml` sistemiyle özel dil dosyaları ekleme
-- ⚙️ Geniş ve açıklamalı `config.yml` ile neredeyse her davranışı özelleştirme
+- 📊 Auth aşamasına göre bossbar gösterme
+- 🔇 Vanilla join/quit/connection/command loglarını susturma
+- 📝 Sadece önemli auth olaylarını Aethelguard formatında loglama
+- 🌐 Oyuncu mesajları için `messages_<code>.yml` dil sistemi
+- ⚙️ Yeni config ayarlarını otomatik ekleyen ve config düzenini commentleriyle koruyan sistem
 
-## 📦 Kurulum
+## 🛠️ Kurulum
 
-1. `aethelguard-0.2-sentinel.jar` dosyasını sunucunun `plugins` klasörüne at.
-2. Sunucuyu başlat ve pluginin dosyalarını oluşturmasını bekle.
-3. `plugins/Aethelguard/config.yml` dosyasını kendi sunucuna göre düzenle.
-4. Mesajları değiştirmek istersen `plugins/Aethelguard/messages/` klasöründeki dil dosyalarını düzenle.
-5. Database, storage veya ana auth davranışlarını değiştirdiysen sunucuyu yeniden başlat.
+1. Jar dosyasını sunucunun `plugins` klasörüne at.
+2. Sunucuyu başlat.
+3. Oluşan `plugins/Aethelguard/config.yml` dosyasını kendi sunucuna göre düzenle.
+4. Mesajları değiştirmek istersen `plugins/Aethelguard/messages/` içindeki dil dosyalarını düzenle.
+5. Database veya temel auth davranışlarını değiştirdiysen sunucuyu yeniden başlat.
 
-> Küçük not: Sadece mesaj değişikliklerinde genelde config/dil dosyalarını düzenlemek yeterlidir; database gibi temel ayarlar için restart önerilir.
+Ayarların çoğu reload ile yenilenebilir:
 
-## 🕹️ Komutlar
+```text
+/aethelguard reload
+```
 
-| Komut | Aliaslar | Ne işe yarar? |
+## ⌨️ Komutlar
+
+| Komut | Aliaslar | Açıklama |
 | --- | --- | --- |
-| `/register <şifre> <şifre tekrar>` | `/kayitol`, `/kayıtol` | Oyuncu için yeni bir hesap oluşturur. |
-| `/login <şifre>` | `/giris`, `/giriş` | Daha önce kayıt olmuş oyuncuyu giriş yaptırır. |
+| `/register <şifre> <şifre tekrar>` | `/kayitol`, `/kayıtol`, `/kayit` | Yeni oyuncu hesabı oluşturur. |
+| `/login <şifre>` | `/giris`, `/giriş` | Kayıtlı hesaba giriş yapar. |
+| `/captcha <kod>` | `/dogrula`, `/doğrula` | Captcha doğrulamasını tamamlar. |
+| `/twofactor <kod>` | `/2fa`, `/authenticator`, `/authy` | Login sırasında 2FA kodunu doğrular. |
+| `/twofactor setup` | `/2fa setup` | Oyuncunun hesabına authenticator kurulumunu başlatır. |
+| `/twofactor confirm <kod>` | `/2fa confirm <kod>` | 2FA kurulumunu tamamlar. |
+| `/twofactor disable <kod>` | `/2fa disable <kod>` | Oyuncunun 2FA korumasını kapatır. |
+| `/changepassword <eski> <yeni> <yeni tekrar>` | `/sifredegistir`, `/şifredeğiştir`, `/password` | Oyuncunun kendi şifresini değiştirmesini sağlar. |
 
-Oyuncu giriş yapmadan önce yalnızca config içinde izin verilen komutları kullanabilir. Varsayılan olarak login ve register komutları açıktır.
+## 👑 Admin Komutları
 
-## ⚙️ Config Rehberi
+| Komut | Açıklama |
+| --- | --- |
+| `/aethelguard reload` | Config, dil dosyaları ve database bağlantısını yeniler. |
+| `/aethelguard status <oyuncu>` | Oyuncunun kayıt, login, IP, konum, yanlış deneme ve depolama durumunu gösterir. |
+| `/aethelguard sessions` | Aktif session listesini gösterir. |
+| `/aethelguard session <oyuncu>` | Oyuncunun aktif session bilgisini gösterir. |
+| `/aethelguard clearsession <oyuncu>` | Bir oyuncunun session kaydını temizler. |
+| `/aethelguard clearsessions` | Tüm session kayıtlarını temizler. |
+| `/aethelguard unregister <oyuncu>` | Oyuncunun auth kaydını siler. |
+| `/aethelguard changepassword <oyuncu> <yeniŞifre>` | Bir oyuncunun şifresini admin olarak değiştirir. |
+| `/aethelguard unlogin <oyuncu>` | Online oyuncuyu oyundan atmadan tekrar auth ekranına alır. |
 
-`config.yml`, pluginin neredeyse bütün davranışlarını düzenleyebilmen için kategorilere ayrılmıştır. Dosyanın içinde her ayarın yanında açıklama bulunur, ama genel mantık şöyle:
+Admin aliasları:
 
-- `prefix`: Oyunculara giden Aethelguard mesajlarının başlığıdır.
-- `default-language`: Oyuncu mesajlarının hangi dosyadan okunacağını belirler. Örneğin `DE` yazarsan plugin `messages_de.yml` dosyasını arar.
-- `console-language`: Console ve plugin log metinlerinin dilidir. Şu anda sadece `en` ve `tr` desteklenir; özel dil dosyaları buraya uygulanmaz.
-- `database`: MySQL bağlantısı, tablo adı ve HikariCP pool ayarlarını içerir.
-- `local-logging`: Başarılı login/register kayıtlarını pluginin kendi log dosyasına yazmayı kontrol eder.
-- `console-logging`: Vanilla connection loglarını ve Aethelguard auth loglarını açıp kapatmanı sağlar.
-- `storage`: MySQL kapalıyken local kullanıcı dosyalarının hangi klasörde tutulacağını belirler.
-- `auth-settings`: Void-zone, efektler, prompt mesajları, timeout, kısıtlamalar, izinli komutlar, hatalı şifre davranışı ve ses ayarlarını içerir.
+```text
+/ag
+/aeg
+/ayarlar
+```
 
-Bu yapı sayesinde plugin sadece “kur ve kullan” şeklinde değil, farklı sunucu tiplerine göre rahatça uyarlanabilecek şekilde tasarlandı.
+## 🧭 Auth Akışı
 
-## 🌐 Dil Dosyaları
+Oyuncu sunucuya girdiğinde Aethelguard önce güvenli konumunu hatırlar. Ardından oyuncu auth ekranına alınır.
 
-Aethelguard varsayılan olarak şu dil dosyalarını oluşturur:
+Varsayılan akış:
+
+1. Oyuncu void-zone konumuna taşınır.
+2. Envanteri, zırhları ve offhand itemi geçici olarak gizlenir.
+3. Captcha gerekiyorsa önce captcha çözmesi istenir.
+4. Hesabı yoksa `/register`, hesabı varsa `/login` istenir.
+5. Hesapta 2FA açıksa `/2fa <kod>` istenir.
+6. Auth tamamlanınca bossbar kaldırılır, envanter geri verilir ve oyuncu güvenli konumuna döner.
+
+İlk kayıt sonrasında oyuncu spawn noktasına gönderilir. Oyuncu auth olmadan çıkarsa veya timeout yerse void-zone konumu son konum olarak kaydedilmez.
+
+## 🛡️ Captcha
+
+Captcha login/register öncesinde çalışır. Varsayılan tür `MAP` captchadır.
+
+Desteklenen türler:
+
+- `MAP`
+- `TEXT`
+- `NUMERIC`
+- `ALPHANUMERIC`
+- `MATH`
+
+Configte varsayılan:
+
+```yml
+auth-settings:
+  captcha:
+    enabled: true
+    types: ["MAP"]
+```
+
+Birden fazla tür yazarsan plugin captcha türünü rastgele seçebilir:
+
+```yml
+types: ["MAP", "TEXT", "NUMERIC", "ALPHANUMERIC", "MATH"]
+```
+
+Captcha deneme hakkı ve kick ayarı, login yanlış şifre denemesinden ayrıdır. Böylece captcha için 5 deneme, login için 3 deneme gibi farklı güvenlik kuralları kullanabilirsin.
+
+## 📡 2FA / Authenticator
+
+Aethelguard TOTP standardını kullanır. Bu yüzden şu uygulamalarla uyumludur:
+
+- Google Authenticator
+- Microsoft Authenticator
+- Authy
+- TOTP destekleyen benzer uygulamalar
+
+Oyuncu kurulumu:
+
+```text
+/2fa setup
+/2fa confirm <kod>
+```
+
+Sonraki girişlerde doğru şifre girildikten sonra oyuncudan authenticator kodu istenir:
+
+```text
+/2fa <kod>
+```
+
+## 🔒 Config Sistemi
+
+Aethelguard config dosyasını sunucu açılışında ve reload sırasında kontrol eder.
+
+Sistem şunları yapar:
+
+- Eksik config keylerini ekler.
+- Mevcut değerleri korur.
+- Yeni eklenen ayarları dosyanın en altına atmaz.
+- Ayarları gerçek config şablonundaki doğru bölüme taşır.
+- Commentleri koruyarak dosyayı düzenli hale getirir.
+- Bilinen ayarlar yanlış yerdeyse doğru yere taşır ve console’a mavi log basar.
+
+Bu sayede eski config kullanan bir sunucu yeni sürüme geçtiğinde ayarlarını kaybetmeden güncel config yapısına yaklaşır.
+
+## 📞 Dil Sistemi
+
+Oyuncu mesajları `messages_<code>.yml` dosyalarından okunur.
+
+Varsayılan dosyalar:
 
 - `messages_tr.yml`
 - `messages_en.yml`
 
-Ekstra dil eklemek istersen yeni bir dosya oluşturabilirsin. Örneğin Almanca için:
+Özel dil eklemek için:
 
-1. `plugins/Aethelguard/messages/messages_de.yml` dosyasını oluştur.
-2. İçine `messages_en.yml` veya `messages_tr.yml` içindeki tüm keyleri ekle.
-3. Mesajları istediğin dile çevir.
-4. `config.yml` içinde `default-language: "DE"` yap.
-5. Sunucuyu yeniden başlat.
+1. `plugins/Aethelguard/messages/messages_de.yml` gibi bir dosya oluştur.
+2. İçine mevcut mesaj keylerini ekle.
+3. Çevirileri düzenle.
+4. Configte dili değiştir:
 
-`default-language` oyuncuya giden mesajlar içindir ve özel dil dosyalarını okuyabilir. `console-language` ise yalnızca console/plugin logları içindir; bu alan özel `messages_*.yml` dosyalarını kullanmaz.
-
-## 💾 Local ve MySQL Depolama
-
-Database kullanmak istemiyorsan `database.enabled: false` bırakabilirsin. Bu durumda oyuncu hesapları local YAML dosyalarında saklanır:
-
-```text
-plugins/Aethelguard/users/
+```yml
+default-language: "DE"
 ```
 
-MySQL kullanmak istersen `database.enabled: true` yapıp host, port, database, username ve password bilgilerini doldurman yeterlidir. Tablo adı `database.table-name` ile değiştirilebilir.
+`default-language` özel dil dosyalarını destekler. `console-language` ise yalnızca plugin console logları içindir ve sadece `en` / `tr` mantığıyla çalışır.
 
-Tablo adı güvenlik nedeniyle yalnızca harf, sayı ve alt çizgi içermelidir.
+## 🗒 Console Dili
 
-## 🧭 Auth Akışı
+Console logları için ayrı dil ayarı bulunur:
 
-Oyuncu sunucuya girdiğinde Aethelguard önce oyuncunun güvenli konumunu hatırlar. Eğer void-zone sistemi açıksa oyuncu geçici olarak auth alanına alınır ve login/register tamamlanana kadar kısıtlı modda kalır.
+```yml
+console-language: "tr"
+console-text-mode: "ascii"
+```
 
-Başarılı login sonrasında:
+`console-text-mode` sadece `console-language: "tr"` iken kullanılır.
 
-- Oyuncunun auth efektleri temizlenir.
-- Chat ekranı temizlenir.
-- Başarılı giriş mesajı gönderilir.
-- Oyuncu son güvenli konumuna döndürülür.
+- `native`: Türkçe karakterleri olduğu gibi yazar. Örnek: `başarıyla giriş yaptı`
+- `ascii`: Türkçe karakterleri console-safe hale getirir. Örnek: `basariyla giris yapti`
 
-İlk register sonrasında:
-
-- Oyuncu otomatik olarak giriş yapmış kabul edilir.
-- Chat ekranı temizlenir.
-- Başarılı kayıt mesajı gönderilir.
-- Oyuncu spawn noktasına yönlendirilir.
-
-Oyuncu login/register yapmadan çıkarsa veya timeout yerse plugin void-zone konumunu son konum olarak kaydetmez. Böylece oyuncu sonraki girişinde yanlışlıkla auth alanından düşmez.
-
-## 🔊 Ses Sistemi
-
-Sesler config üzerinden hem toplu hem de tek tek yönetilebilir. İstersen bütün sesleri tek ayarla kapatabilir, istersen sadece belirli eventlerin sesini değiştirebilirsin.
-
-Desteklenen temel ses olayları:
-
-- Başarılı login
-- Başarılı register
-- Hatalı şifre
-
-Her ses için `enabled`, `sound`, `volume`, `pitch`, `repeat-times` ve `repeat-interval-ticks` gibi ayarlar bulunur. Bu sayede kısa tek bir efekt de yapabilirsin, birkaç kez tekrar eden daha belirgin bir efekt de.
+Hosting panelin veya console ekranın Türkçe karakterleri bozuyorsa `ascii` kullanman önerilir.
 
 ## 📝 Log Sistemi
 
-Aethelguard 0.2-sentinel ile log tarafı daha temiz hale getirildi. Giriş yapmamış oyuncuların `/login` veya `/register` komutları console'a şifreli komut olarak düşmez.
+Aethelguard gereksiz vanilla log kalabalığını azaltabilir.
 
-Plugin ayrıca istersen vanilla connection loglarını susturabilir:
+Filtrelenebilen loglar:
 
 - `joined the game`
 - `left the game`
@@ -131,43 +209,63 @@ Plugin ayrıca istersen vanilla connection loglarını susturabilir:
 - `UUID of player`
 - `issued server command`
 
-Bunun yerine başarılı login/register işlemlerini Aethelguard formatında görebilirsin. Böylece console daha az kalabalık olur ve gerçekten önemli auth olayları daha rahat okunur.
+`/login`, `/register` gibi şifre içeren komutlar console’a şifreyle düşmesin diye ayrıca sessiz işlenir.
 
-## 🚀 0.1'den 0.2-sentinel'e Neler Değişti?
+Auth başarıları, auto-login, unregister, unlogin ve benzeri durumlar Aethelguard loglarıyla takip edilebilir.
 
-0.2-sentinel sürümünün ana hedefi pluginin daha güvenli, daha temiz ve daha fazla özelleştirilebilir hale gelmesiydi.
+## 🛢 Depolama
 
-### Yeni Gelenler
+Local kullanımda oyuncu kayıtları şu klasörde tutulur:
 
-- Config dosyası baştan düzenlendi ve açıklamalı kategorilere ayrıldı.
-- Çok daha fazla ayar config üzerinden aç/kapa yapılabilir hale geldi.
-- Login/register komutlarının console'a şifreyle düşmesi engellendi.
-- Vanilla join/quit/connection loglarını susturma sistemi eklendi.
-- Başarılı login/register için temiz Aethelguard logları eklendi.
-- Login ekranındaki oyuncuların normal chati görmesi engellendi.
-- Login/register sonrası oyuncunun kendi chat ekranını temizleme eklendi.
-- Ses sistemi genişletildi ve her ses için ayrı ayarlar eklendi.
-- Local users klasörü ve internal log klasörü config üzerinden ayarlanabilir hale geldi.
-- MySQL tablo adı ve connection pool ayarları config'e taşındı.
-- Custom language dosyaları için destek ve açıklamalar netleştirildi.
+```text
+plugins/Aethelguard/users/
+```
 
-### Düzeltilenler
+Local modda ayrıca username ve UUID eşleşmeleri için index dosyası oluşturulabilir:
 
-- Auth olmadan çıkan veya timeout yiyen oyuncuların konumunun void-zone olarak kaydedilmesi engellendi.
-- Oyuncuların tekrar girişte auth alanından düşme sorunu çözüldü.
-- İlk register sonrası oyuncunun olduğu yerde kalması yerine spawn'a yönlendirilmesi sağlandı.
-- Logların gereksiz kalabalıklaşmasına sebep olan vanilla mesajlar filtrelendi.
-- Seslerin çok kısa veya fark edilmesi zor olabildiği durumlar için tekrar ayarları eklendi.
+```text
+plugins/Aethelguard/users/user-index.txt
+```
 
-### 0.1'e Göre Fark
+MySQL kullanmak için:
 
-0.1 daha çok temel auth sistemi gibi çalışıyordu. 0.2-sentinel ise sunucu sahiplerinin plugin davranışını kendi ihtiyaçlarına göre ayarlayabileceği daha olgun bir sürüm oldu. Artık loglar daha temiz, config daha anlaşılır, dil sistemi daha esnek ve auth akışı daha güvenli.
+```yml
+database:
+  enabled: true
+  host: "localhost"
+  port: 3306
+  database: "aethelguard_db"
+  username: "root"
+  password: "password123"
+```
 
-## 🤝 Katkı ve Geri Bildirim
+Tablo adı yalnızca harf, sayı ve alt çizgi içermelidir.
 
-Bir hata bulursan, yeni özellik fikrin varsa veya config tarafında daha fazla özelleştirme gerektiğini düşünüyorsan projeye katkı verebilirsin. Aethelguard'ın amacı küçük sunuculardan daha düzenli yapılara kadar herkesin rahatça kullanabileceği temiz bir auth deneyimi sunmak.
+## 🔑 İzinler
 
-## 📜 License
+| Permission | Açıklama |
+| --- | --- |
+| `aethelguard.admin` | Admin komutlarını kullanma izni. Varsayılan: OP |
+| `aethelguard.bypass.iplimit` | IP kayıt limitini bypass eder. Varsayılan: OP |
+
+## 📰 Sürüm Notları
+
+0.2-sentinel sonrası geliştirme sürecinde öne çıkan yenilikler:
+
+- Captcha sistemi
+- Map captcha görünümü
+- Captcha cooldown ve ayrı attempt/kick ayarları
+- Authenticator / 2FA desteği
+- Bossbar auth yönlendirmeleri
+- Auth ekranında envanter gizleme
+- Login/register/captcha promptları için ayrı tekrar ayarları
+- Console text mode: `native` / `ascii`
+- Config auto-sync sistemi
+- Yeni config keylerini doğru yere commentleriyle ekleme
+
+0.3 sürümü tamamlandığında bu özellikler final sürüm notlarına ayrıca toparlanacak.
+
+## 📜 Lisans
 
 Aethelguard, **Aethelguard Public Use License** ile paylaşılır.
 
@@ -177,6 +275,6 @@ Kısaca:
 - Orijinal ve değiştirilmemiş hali paylaşılabilir.
 - Kaynak kod inceleme, öğrenme ve güvenlik kontrolü için okunabilir.
 - Değiştirilmiş sürüm yayınlamak, fork dağıtmak veya kodu başka projede kullanmak yasaktır.
-- Aethelguard'ın sahipliği ve telif hakları Aethelster'a aittir.
+- Aethelguard’ın sahipliği ve telif hakları Aethelster’a aittir.
 
 Detaylar için `LICENSE` dosyasını okuyabilirsin.
