@@ -118,6 +118,11 @@ public class AuthCommand implements CommandExecutor {
     }
 
     private void handleLogin(Player player, UUID playerUUID, String uuidStr, String ipAddress, String[] args) {
+        if (plugin.isTemporarilyAuthLocked(playerUUID)) {
+            plugin.kickTemporaryAuthLocked(player, "messages.auth-lockout-active-kick");
+            return;
+        }
+
         if (plugin.isAccountRegistered(playerUUID) && plugin.getAuthMode(playerUUID).equals("PIN")) {
             plugin.sendMessage(player, "messages.pin-required", true);
             return;
@@ -180,26 +185,24 @@ public class AuthCommand implements CommandExecutor {
         boolean kickEnabled = plugin.getConfig().getBoolean("auth-settings.wrong-password.kick-enabled", true);
 
         if (kickEnabled && attempts >= maxAttempts) {
-            if (plugin.getConfig().getBoolean("recovery.enabled", true)
-                    && plugin.getConfig().getBoolean("recovery.offer-before-kick", true)) {
-                plugin.getServer().getScheduler().runTask(plugin, () -> {
-                    Aethelguard.SecurityQuestion question = plugin.getStoredSecurityQuestion(playerUUID);
-                    if (question != null) {
-                        plugin.sendMessage(player, "messages.recover-question-hint", true, Map.of("question", question.text()));
-                    }
-                    plugin.sendMessage(player, "messages.recover-before-kick", true);
-                });
-                plugin.getWrongPasswordAttempts().remove(playerUUID);
-                return;
-            }
-
+            boolean offerRecovery = plugin.getConfig().getBoolean("recovery.enabled", true)
+                    && plugin.getConfig().getBoolean("recovery.offer-before-kick", true);
+            boolean locked = plugin.registerFailedAuthKick(playerUUID);
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                     plugin.restorePreviousLocation(player);
                     plugin.restoreAuthInventory(player);
                     plugin.hideAuthBossBar(player);
-                    player.kickPlayer(plugin.getRawStringMessage("messages.wrong-password-kick", true, Map.of(
-                            "max", String.valueOf(maxAttempts)
-                    )));
+                    if (locked) {
+                        player.kickPlayer(plugin.getRawStringMessage("messages.auth-lockout-triggered-kick", true, Map.of(
+                                "time", plugin.formatDuration(plugin.getTemporaryAuthLockoutRemainingMillis(playerUUID))
+                        )));
+                    } else if (offerRecovery) {
+                        player.kickPlayer(plugin.getRawStringMessage("messages.recover-before-kick", true));
+                    } else {
+                        player.kickPlayer(plugin.getRawStringMessage("messages.wrong-password-kick", true, Map.of(
+                                "max", String.valueOf(maxAttempts)
+                        )));
+                    }
             });
             plugin.getWrongPasswordAttempts().remove(playerUUID);
             return;

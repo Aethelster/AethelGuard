@@ -59,12 +59,16 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
 public final class Aethelguard extends JavaPlugin {
+    private static final int AUTH_LOCKOUT_KICK_CYCLES = 2;
+    private static final long AUTH_LOCKOUT_DURATION_MILLIS = 5 * 60 * 1000L;
 
     private DatabaseManager databaseManager;
     private final Map<UUID, Location> previousLocations = new HashMap<>();
     private final Set<UUID> unauthenticatedPlayers = new HashSet<>();
     private final Map<UUID, Integer> wrongPasswordAttempts = new HashMap<>();
     private final Map<UUID, Integer> wrongPinAttempts = new HashMap<>();
+    private final Map<UUID, Integer> authFailureKickCycles = new HashMap<>();
+    private final Map<UUID, Long> temporaryAuthLockouts = new HashMap<>();
     private final Set<UUID> loggedInPlayers = new HashSet<>();
     private final Map<UUID, AuthSession> authSessions = new HashMap<>();
     private final Map<UUID, CaptchaChallenge> captchaChallenges = new HashMap<>();
@@ -393,19 +397,22 @@ public final class Aethelguard extends JavaPlugin {
     }
 
     public void completeLogin(Player player,  boolean sendMessage) {
-        unauthenticatedPlayers.remove(player.getUniqueId());
-        loggedInPlayers.add(player.getUniqueId());
-        wrongPinAttempts.remove(player.getUniqueId());
-        clearAuthTimeout(player.getUniqueId());
+        UUID uuid = player.getUniqueId();
+        unauthenticatedPlayers.remove(uuid);
+        loggedInPlayers.add(uuid);
+        wrongPasswordAttempts.remove(uuid);
+        wrongPinAttempts.remove(uuid);
+        clearTemporaryAuthLockout(uuid);
+        clearAuthTimeout(uuid);
         recordAdaptiveSuccessfulAuth(player);
-        clearCaptchaState(player.getUniqueId());
-        clearTwoFactorState(player.getUniqueId());
+        clearCaptchaState(uuid);
+        clearTwoFactorState(uuid);
         hideAuthBossBar(player);
 
         clearAuthEffects(player);
 
         restorePreviousLocation(player);
-        previousLocations.remove(player.getUniqueId());
+        previousLocations.remove(uuid);
         restoreAuthInventory(player);
         clearPlayerChat(player);
 
@@ -779,6 +786,7 @@ public final class Aethelguard extends JavaPlugin {
                 Map.entry("auth-settings.apply-blindness", true),
                 Map.entry("auth-settings.clear-chat-on-auth", true),
                 Map.entry("auth-settings.log-unauthenticated-command-attempts", true),
+                Map.entry("auth-settings.temporary-lockout.enabled", true),
                 Map.entry("auth-settings.registration.ip-limit.enabled", true),
                 Map.entry("auth-settings.registration.ip-limit.max-accounts", 2),
                 Map.entry("auth-settings.registration.ip-limit.bypass-permission", "aethelguard.bypass.iplimit"),
@@ -1461,6 +1469,76 @@ public final class Aethelguard extends JavaPlugin {
                 : getLocalAccountStatus(username);
     }
 
+    public List<String> getKnownAccountNames() {
+        Set<String> names = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+
+        if (!getConfig().getBoolean("database.enabled", false)) {
+            File[] files = getLocalUsersFolder().listFiles((dir, name) -> name.endsWith(".yml"));
+            if (files != null) {
+                for (File file : files) {
+                    FileConfiguration config = YamlConfiguration.loadConfiguration(file);
+                    String username = config.getString("username", "");
+                    if (!username.isBlank()) names.add(username);
+                }
+            }
+            return new ArrayList<>(names);
+        }
+
+        try (java.sql.Connection conn = getDatabaseManager().getConnection()) {
+            if (conn == null) return List.of();
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "SELECT username FROM " + getAuthTableName() + " ORDER BY username LIMIT 200;"
+            )) {
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        String username = rs.getString("username");
+                        if (username != null && !username.isBlank()) names.add(username);
+                    }
+                }
+            }
+        } catch (SQLException ignored) {
+        }
+        return new ArrayList<>(names);
+    }
+
+    public List<String> getKnownAccountIps() {
+        Set<String> ips = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+
+        if (!getConfig().getBoolean("database.enabled", false)) {
+            File[] files = getLocalUsersFolder().listFiles((dir, name) -> name.endsWith(".yml"));
+            if (files != null) {
+                for (File file : files) {
+                    FileConfiguration config = YamlConfiguration.loadConfiguration(file);
+                    addKnownIp(ips, config.getString("registration-ip", ""));
+                    addKnownIp(ips, config.getString("last-ip", ""));
+                }
+            }
+            return new ArrayList<>(ips);
+        }
+
+        try (java.sql.Connection conn = getDatabaseManager().getConnection()) {
+            if (conn == null) return List.of();
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "SELECT DISTINCT registration_ip, last_ip FROM " + getAuthTableName() + " LIMIT 200;"
+            )) {
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        addKnownIp(ips, rs.getString("registration_ip"));
+                        addKnownIp(ips, rs.getString("last_ip"));
+                    }
+                }
+            }
+        } catch (SQLException ignored) {
+        }
+        return new ArrayList<>(ips);
+    }
+
+    private void addKnownIp(Set<String> ips, String ip) {
+        if (ip != null && !ip.isBlank() && !ip.equalsIgnoreCase("UNKNOWN") && !ip.equals("-")) {
+            ips.add(ip);
+        }
+    }
+
     public void updateAccountSnapshot(Player player, boolean incrementLoginCount) {
         String uuid = player.getUniqueId().toString();
         String now = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
@@ -1541,8 +1619,16 @@ public final class Aethelguard extends JavaPlugin {
                     storedName,
                     uuid,
                     "Local",
+                    userConfig.getString("auth-mode", "PASSWORD"),
+                    userConfig.getBoolean("password.usable", true),
+                    userConfig.getString("pin.hash", null) != null && !userConfig.getString("pin.hash", "").isBlank(),
+                    userConfig.getBoolean("two-factor.enabled", false) && userConfig.getString("two-factor.secret", null) != null,
+                    userConfig.getString("recovery.method", "question"),
+                    userConfig.getString("security-question.answer-hash", null) != null,
+                    userConfig.getStringList("backup-codes.hashes").size(),
                     userConfig.getString("created-at", "-"),
                     userConfig.getString("last-login", "-"),
+                    userConfig.getString("security.last-wrong-attempt", "-"),
                     userConfig.getString("last-ip", "-"),
                     userConfig.getString("last-world", "-"),
                     formatStoredLocation(
@@ -1551,7 +1637,8 @@ public final class Aethelguard extends JavaPlugin {
                             userConfig.getDouble("last-location.z", 0.0),
                             userConfig.contains("last-location.x")
                     ),
-                    userConfig.getInt("security.wrong-attempts-total", 0)
+                    userConfig.getInt("security.wrong-attempts-total", 0),
+                    userConfig.getInt("stats.login-count", 0)
             );
         }
 
@@ -1563,7 +1650,7 @@ public final class Aethelguard extends JavaPlugin {
             if (conn == null) return AccountStatus.notFound(username, "MySQL");
 
             try (java.sql.PreparedStatement ps = conn.prepareStatement(
-                    "SELECT uuid, username, created_at, last_login, last_ip, last_world, last_x, last_y, last_z, wrong_attempts_total " +
+                    "SELECT uuid, username, auth_mode, password_usable, pin_hash, totp_secret, recovery_method, security_question_hash, backup_code_hashes, created_at, last_login, last_wrong_attempt, last_ip, last_world, last_x, last_y, last_z, wrong_attempts_total, login_count " +
                             "FROM " + getAuthTableName() + " WHERE LOWER(username) = LOWER(?) LIMIT 1;"
             )) {
                 ps.setString(1, username);
@@ -1576,12 +1663,21 @@ public final class Aethelguard extends JavaPlugin {
                             rs.getString("username"),
                             parseUuid(rs.getString("uuid")),
                             "MySQL",
+                            stringOrDash(rs.getString("auth_mode")),
+                            rs.getBoolean("password_usable"),
+                            rs.getString("pin_hash") != null && !rs.getString("pin_hash").isBlank(),
+                            rs.getString("totp_secret") != null && !rs.getString("totp_secret").isBlank(),
+                            stringOrDash(rs.getString("recovery_method")),
+                            rs.getString("security_question_hash") != null && !rs.getString("security_question_hash").isBlank(),
+                            countStoredBackupCodes(rs.getString("backup_code_hashes")),
                             stringOrDash(rs.getString("created_at")),
                             stringOrDash(rs.getString("last_login")),
+                            stringOrDash(rs.getString("last_wrong_attempt")),
                             stringOrDash(rs.getString("last_ip")),
                             stringOrDash(rs.getString("last_world")),
                             formatStoredLocation(rs.getDouble("last_x"), rs.getDouble("last_y"), rs.getDouble("last_z"), rs.getObject("last_x") != null),
-                            rs.getInt("wrong_attempts_total")
+                            rs.getInt("wrong_attempts_total"),
+                            rs.getInt("login_count")
                     );
                 }
             }
@@ -1592,12 +1688,20 @@ public final class Aethelguard extends JavaPlugin {
         }
     }
 
-    private AccountStatus buildAccountStatus(String username, UUID uuid, String storage, String createdAt, String lastLogin, String lastIp, String lastWorld, String lastLocation, int totalWrongAttempts) {
+    private AccountStatus buildAccountStatus(String username, UUID uuid, String storage, String authMode, boolean passwordUsable,
+                                             boolean pinSet, boolean twoFactorEnabled, String recoveryMethod,
+                                             boolean securityQuestionSet, int backupCodeCount, String createdAt,
+                                             String lastLogin, String lastWrongAttempt, String lastIp,
+                                             String lastWorld, String lastLocation, int totalWrongAttempts, int loginCount) {
         Player onlinePlayer = uuid == null ? getServer().getPlayerExact(username) : getServer().getPlayer(uuid);
         boolean online = onlinePlayer != null && onlinePlayer.isOnline();
         boolean authenticated = uuid != null && loggedInPlayers.contains(uuid);
         boolean waitingAuth = uuid != null && unauthenticatedPlayers.contains(uuid);
         int currentWrongAttempts = uuid == null ? 0 : wrongPasswordAttempts.getOrDefault(uuid, 0);
+        int currentPinAttempts = uuid == null ? 0 : wrongPinAttempts.getOrDefault(uuid, 0);
+        boolean temporaryLockout = uuid != null && isTemporarilyAuthLocked(uuid);
+        String temporaryLockoutRemaining = temporaryLockout ? formatDuration(getTemporaryAuthLockoutRemainingMillis(uuid)) : "-";
+        boolean activeSession = uuid != null && authSessions.containsKey(uuid);
 
         return new AccountStatus(
                 true,
@@ -1607,10 +1711,23 @@ public final class Aethelguard extends JavaPlugin {
                 online,
                 authenticated,
                 waitingAuth,
+                activeSession,
+                temporaryLockout,
+                temporaryLockoutRemaining,
+                stringOrDash(authMode).toUpperCase(Locale.ROOT),
+                passwordUsable,
+                pinSet,
+                twoFactorEnabled,
+                stringOrDash(recoveryMethod),
+                securityQuestionSet,
+                backupCodeCount,
                 currentWrongAttempts,
+                currentPinAttempts,
                 totalWrongAttempts,
+                loginCount,
                 stringOrDash(createdAt),
                 stringOrDash(lastLogin),
+                stringOrDash(lastWrongAttempt),
                 stringOrDash(lastIp),
                 stringOrDash(lastWorld),
                 stringOrDash(lastLocation)
@@ -1628,6 +1745,15 @@ public final class Aethelguard extends JavaPlugin {
     private String formatStoredLocation(double x, double y, double z, boolean hasLocation) {
         if (!hasLocation) return "-";
         return String.format(Locale.US, "%.2f, %.2f, %.2f", x, y, z);
+    }
+
+    private int countStoredBackupCodes(String joinedHashes) {
+        if (joinedHashes == null || joinedHashes.isBlank()) return 0;
+        int count = 0;
+        for (String part : joinedHashes.split("\\|")) {
+            if (!part.isBlank()) count++;
+        }
+        return count;
     }
 
     private String stringOrDash(String value) {
@@ -3216,6 +3342,54 @@ public final class Aethelguard extends JavaPlugin {
 
     public int getBackupCodeCount(UUID uuid) {
         return getBackupCodeHashes(uuid).size();
+    }
+
+    public boolean isTemporarilyAuthLocked(UUID uuid) {
+        if (!getConfig().getBoolean("auth-settings.temporary-lockout.enabled", true)) {
+            clearTemporaryAuthLockout(uuid);
+            return false;
+        }
+
+        Long lockedUntil = temporaryAuthLockouts.get(uuid);
+        if (lockedUntil == null) return false;
+
+        if (lockedUntil <= System.currentTimeMillis()) {
+            clearTemporaryAuthLockout(uuid);
+            return false;
+        }
+        return true;
+    }
+
+    public long getTemporaryAuthLockoutRemainingMillis(UUID uuid) {
+        if (!isTemporarilyAuthLocked(uuid)) return 0L;
+        return Math.max(0L, temporaryAuthLockouts.get(uuid) - System.currentTimeMillis());
+    }
+
+    public boolean registerFailedAuthKick(UUID uuid) {
+        if (!getConfig().getBoolean("auth-settings.temporary-lockout.enabled", true)) return false;
+
+        int cycles = authFailureKickCycles.getOrDefault(uuid, 0) + 1;
+        if (cycles >= AUTH_LOCKOUT_KICK_CYCLES) {
+            temporaryAuthLockouts.put(uuid, System.currentTimeMillis() + AUTH_LOCKOUT_DURATION_MILLIS);
+            authFailureKickCycles.put(uuid, AUTH_LOCKOUT_KICK_CYCLES);
+            return true;
+        }
+
+        authFailureKickCycles.put(uuid, cycles);
+        return false;
+    }
+
+    public void clearTemporaryAuthLockout(UUID uuid) {
+        temporaryAuthLockouts.remove(uuid);
+        authFailureKickCycles.remove(uuid);
+    }
+
+    public void kickTemporaryAuthLocked(Player player, String messagePath) {
+        restorePreviousLocation(player);
+        restoreAuthInventory(player);
+        hideAuthBossBar(player);
+        player.kickPlayer(getRawStringMessage(messagePath, true,
+                Map.of("time", formatDuration(getTemporaryAuthLockoutRemainingMillis(player.getUniqueId())))));
     }
 
     public void markAuthTimeout(Player player, long timeoutTicks) {

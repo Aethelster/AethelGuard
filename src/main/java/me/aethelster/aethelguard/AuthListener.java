@@ -61,6 +61,11 @@ public class AuthListener implements Listener {
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
 
+        if (plugin.isTemporarilyAuthLocked(uuid)) {
+            plugin.kickTemporaryAuthLocked(player, "messages.auth-lockout-active-kick");
+            return;
+        }
+
         plugin.rememberPreviousLocation(player);
 
         if (plugin.consumeValidAuthSession(player)) {

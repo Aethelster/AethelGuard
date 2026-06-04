@@ -24,9 +24,11 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 public class AdminCommand implements CommandExecutor, TabCompleter {
@@ -101,15 +103,32 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
         }
 
         if (subCommand.equals("pingui")) {
+            if (args.length < 2) {
+                plugin.sendMessage(sender, "messages.admin-pingui-preview-usage", true);
+                return true;
+            }
+
+            if (args[1].equalsIgnoreCase("themes")) {
+                plugin.sendMessage(sender, "messages.admin-pingui-themes", true, Map.of(
+                        "themes", String.join(", ", plugin.getPinGuiThemes()),
+                        "current", plugin.getConfig().getString("auth-settings.pin.gui.theme", "quartz")
+                ));
+                return true;
+            }
+
+            if (!args[1].equalsIgnoreCase("preview")) {
+                plugin.sendMessage(sender, "messages.admin-pingui-preview-usage", true);
+                return true;
+            }
+
             if (!(sender instanceof Player player)) {
                 plugin.sendMessage(sender, "messages.only-players", true);
                 return true;
             }
-            if (args.length < 3 || !args[1].equalsIgnoreCase("preview")) {
-                plugin.sendMessage(sender, "messages.admin-pingui-preview-usage", true);
-                return true;
-            }
-            String theme = args[2].toLowerCase(Locale.ROOT);
+
+            String theme = args.length >= 3
+                    ? args[2].toLowerCase(Locale.ROOT)
+                    : plugin.getConfig().getString("auth-settings.pin.gui.theme", "quartz").toLowerCase(Locale.ROOT);
             if (!plugin.getPinGuiThemes().contains(theme)) {
                 plugin.sendMessage(sender, "messages.admin-pingui-preview-usage", true);
                 return true;
@@ -658,10 +677,23 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
                 Map.entry("online", yesNo(status.online())),
                 Map.entry("authenticated", yesNo(status.authenticated())),
                 Map.entry("waiting_auth", yesNo(status.waitingAuth())),
+                Map.entry("active_session", yesNo(status.activeSession())),
+                Map.entry("temporary_lockout", yesNo(status.temporaryLockout())),
+                Map.entry("temporary_lockout_remaining", status.temporaryLockoutRemaining()),
+                Map.entry("auth_mode", status.authMode()),
+                Map.entry("password_usable", yesNo(status.passwordUsable())),
+                Map.entry("pin_set", yesNo(status.pinSet())),
+                Map.entry("two_factor", yesNo(status.twoFactorEnabled())),
+                Map.entry("recovery_method", status.recoveryMethod()),
+                Map.entry("security_question", yesNo(status.securityQuestionSet())),
+                Map.entry("backup_codes", String.valueOf(status.backupCodeCount())),
                 Map.entry("wrong_current", String.valueOf(status.currentWrongAttempts())),
+                Map.entry("wrong_pin_current", String.valueOf(status.currentPinAttempts())),
                 Map.entry("wrong_total", String.valueOf(status.totalWrongAttempts())),
+                Map.entry("login_count", String.valueOf(status.loginCount())),
                 Map.entry("created_at", status.createdAt()),
                 Map.entry("last_login", status.lastLogin()),
+                Map.entry("last_wrong_attempt", status.lastWrongAttempt()),
                 Map.entry("last_ip", status.lastIp()),
                 Map.entry("last_world", status.lastWorld()),
                 Map.entry("last_location", status.lastLocation())
@@ -675,9 +707,15 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
                 "messages.admin-status-online",
                 "messages.admin-status-authenticated",
                 "messages.admin-status-waiting-auth",
+                "messages.admin-status-active-session",
+                "messages.admin-status-temporary-lockout",
+                "messages.admin-status-auth-mode",
+                "messages.admin-status-security",
                 "messages.admin-status-wrong-attempts",
+                "messages.admin-status-login-count",
                 "messages.admin-status-created-at",
                 "messages.admin-status-last-login",
+                "messages.admin-status-last-wrong-attempt",
                 "messages.admin-status-last-ip",
                 "messages.admin-status-last-world",
                 "messages.admin-status-last-location",
@@ -838,8 +876,12 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
             ));
         }
 
-        if (args.length == 2 && List.of("status", "ipinfo", "accounts", "session", "clearsession", "unregister", "changepassword", "unlogin", "logout").contains(args[0].toLowerCase(Locale.ROOT))) {
-            return CommandCompletions.onlinePlayers(plugin.getServer(), args[1]);
+        if (args.length == 2 && List.of("status", "session", "clearsession", "unregister", "changepassword", "unlogin", "logout").contains(args[0].toLowerCase(Locale.ROOT))) {
+            return accountAndOnlineCompletions(args[1]);
+        }
+
+        if (args.length == 2 && List.of("ipinfo", "accounts").contains(args[0].toLowerCase(Locale.ROOT))) {
+            return accountIpAndOnlineCompletions(args[1]);
         }
 
         if (args.length == 2 && args[0].equalsIgnoreCase("diagnostics")) {
@@ -851,7 +893,7 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 2 && args[0].equalsIgnoreCase("pingui")) {
-            return CommandCompletions.filter(args[1], List.of("preview"));
+            return CommandCompletions.filter(args[1], List.of("preview", "themes"));
         }
 
         if (args.length == 3 && args[0].equalsIgnoreCase("pingui") && args[1].equalsIgnoreCase("preview")) {
@@ -859,5 +901,20 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
         }
 
         return List.of();
+    }
+
+    private List<String> accountAndOnlineCompletions(String current) {
+        Set<String> options = new LinkedHashSet<>();
+        options.addAll(plugin.getKnownAccountNames());
+        options.addAll(CommandCompletions.onlinePlayers(plugin.getServer(), ""));
+        return CommandCompletions.filter(current, options);
+    }
+
+    private List<String> accountIpAndOnlineCompletions(String current) {
+        Set<String> options = new LinkedHashSet<>();
+        options.addAll(plugin.getKnownAccountNames());
+        options.addAll(plugin.getKnownAccountIps());
+        options.addAll(CommandCompletions.onlinePlayers(plugin.getServer(), ""));
+        return CommandCompletions.filter(current, options);
     }
 }

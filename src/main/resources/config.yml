@@ -211,6 +211,13 @@ auth-settings:
   clear-chat-on-auth: true
   # Logs denied commands used before authentication. Login/register commands are never logged.
   log-unauthenticated-command-attempts: true
+  temporary-lockout:
+    # Enables temporary auth lockout after repeated full failed auth cycles.
+    # The first max-attempt kick stays normal. If the same player reaches max attempts
+    # and gets kicked again, Aethelguard locks that account temporarily.
+    # The required kick cycle count is intentionally hardcoded to 2.
+    # The lock duration is intentionally hardcoded to 5 minutes.
+    enabled: true
 
   registration:
     ip-limit:

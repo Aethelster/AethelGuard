@@ -47,6 +47,11 @@ public class PinCommand implements CommandExecutor {
     private boolean handlePinLogin(Player player, String[] args) {
         UUID uuid = player.getUniqueId();
 
+        if (plugin.isTemporarilyAuthLocked(uuid)) {
+            plugin.kickTemporaryAuthLocked(player, "messages.auth-lockout-active-kick");
+            return true;
+        }
+
         if (!plugin.getConfig().getBoolean("auth-settings.pin.enabled", true)) {
             plugin.sendMessage(player, "messages.pin-disabled", true);
             return true;
@@ -388,13 +393,19 @@ public class PinCommand implements CommandExecutor {
         int maxAttempts = plugin.getConfig().getInt("auth-settings.pin.wrong-pin.max-attempts", 3);
         boolean kickEnabled = plugin.getConfig().getBoolean("auth-settings.pin.wrong-pin.kick-enabled", true);
         if (kickEnabled && attempts >= maxAttempts) {
+            boolean locked = plugin.registerFailedAuthKick(uuid);
             plugin.getWrongPinAttempts().remove(uuid);
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 plugin.restorePreviousLocation(player);
                 plugin.restoreAuthInventory(player);
                 plugin.hideAuthBossBar(player);
-                player.kickPlayer(plugin.getRawStringMessage("messages.wrong-pin-kick", true,
-                        Map.of("max", String.valueOf(maxAttempts))));
+                if (locked) {
+                    player.kickPlayer(plugin.getRawStringMessage("messages.auth-lockout-triggered-kick", true,
+                            Map.of("time", plugin.formatDuration(plugin.getTemporaryAuthLockoutRemainingMillis(uuid)))));
+                } else {
+                    player.kickPlayer(plugin.getRawStringMessage("messages.wrong-pin-kick", true,
+                            Map.of("max", String.valueOf(maxAttempts))));
+                }
             });
             return;
         }
