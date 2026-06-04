@@ -7,15 +7,23 @@ import org.bukkit.command.TabCompleter;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.NamespacedKey;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.Registry;
+import org.bukkit.Sound;
 import org.mindrot.jbcrypt.BCrypt;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -84,6 +92,11 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
             }
 
             sendAccounts(sender, args[1]);
+            return true;
+        }
+
+        if (subCommand.equals("diagnostics")) {
+            handleDiagnostics(sender, args);
             return true;
         }
 
@@ -240,6 +253,306 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
 
         plugin.sendMessage(sender, "messages.admin-usage", true);
         return true;
+    }
+
+    private void handleDiagnostics(CommandSender sender, String[] args) {
+        if (!plugin.getConfig().getBoolean("diagnostics.enabled", true)) {
+            plugin.sendMessage(sender, "messages.admin-diagnostics-disabled", true);
+            return;
+        }
+
+        if (args.length == 1) {
+            sendDiagnosticsOverview(sender);
+            return;
+        }
+
+        String mode = args[1].toLowerCase(Locale.ROOT);
+        if (mode.equals("player")) {
+            if (args.length < 3) {
+                plugin.sendMessage(sender, "messages.admin-diagnostics-player-usage", true);
+                return;
+            }
+            sendDiagnosticsPlayer(sender, args[2]);
+            return;
+        }
+
+        if (mode.equals("config")) {
+            sendDiagnosticsConfig(sender);
+            return;
+        }
+
+        if (mode.equals("dump")) {
+            writeDiagnosticsDump(sender);
+            return;
+        }
+
+        plugin.sendMessage(sender, "messages.admin-diagnostics-usage", true);
+    }
+
+    private void sendDiagnosticsOverview(CommandSender sender) {
+        sendDiagnosticsHeader(sender, "messages.admin-diagnostics-title");
+        sendDiagnosticEntry(sender, "Plugin version", plugin.getDescription().getVersion());
+        sendDiagnosticEntry(sender, "Storage mode", plugin.getConfig().getBoolean("database.enabled", false) ? "MySQL" : "Local YAML");
+        sendDiagnosticEntry(sender, "Database", databaseHealth());
+        sendDiagnosticEntry(sender, "Default language", plugin.getConfig().getString("default-language", "TR"));
+        sendDiagnosticEntry(sender, "Console language", plugin.getConfig().getString("console-language", "en") + " / " + plugin.getConfig().getString("console-text-mode", "ascii"));
+        sendDiagnosticEntry(sender, "PIN", enabledState("auth-settings.pin.enabled") + ", GUI " + enabledState("auth-settings.pin.gui.enabled") + ", theme " + plugin.getConfig().getString("auth-settings.pin.gui.theme", "quartz"));
+        sendDiagnosticEntry(sender, "Default auth mode", plugin.defaultAuthMode());
+        sendDiagnosticEntry(sender, "Captcha", enabledState("auth-settings.captcha.enabled") + ", types " + plugin.getConfig().getStringList("auth-settings.captcha.types"));
+        sendDiagnosticEntry(sender, "Two-factor", enabledState("auth-settings.two-factor.enabled"));
+        sendDiagnosticEntry(sender, "Recovery", enabledState("recovery.enabled"));
+        sendDiagnosticEntry(sender, "Adaptive security", enabledState("adaptive-security.enabled"));
+        sendDiagnosticEntry(sender, "VPN check", enabledState("adaptive-security.suspicious-ip-extra-captcha.vpn-check.enabled") + ", providers " + plugin.getConfig().getStringList("adaptive-security.suspicious-ip-extra-captcha.vpn-check.providers"));
+        sendDiagnosticEntry(sender, "Sessions", enabledState("auth-settings.sessions.enabled") + ", " + plugin.getConfig().getLong("auth-settings.sessions.duration-minutes", 10L) + " minutes");
+        sendDiagnosticEntry(sender, "Status system", enabledState("status.enabled"));
+        sendDiagnosticEntry(sender, "Local users folder", localUsersSummary());
+        sendDiagnosticEntry(sender, "User index", userIndexSummary());
+        sendDiagnosticEntry(sender, "Active auth sessions", String.valueOf(plugin.getAuthSessionSummaries().size()));
+        sendDiagnosticEntry(sender, "Waiting auth players", String.valueOf(plugin.getUnauthenticatedPlayers().size()));
+        sendDiagnosticEntry(sender, "Captcha challenges", String.valueOf(plugin.getCaptchaChallengeCount()));
+        sendDiagnosticEntry(sender, "Pending 2FA players", String.valueOf(plugin.getPendingTwoFactorCount()));
+        sendDiagnosticsFooter(sender);
+    }
+
+    private void sendDiagnosticsPlayer(CommandSender sender, String username) {
+        AccountStatus status = plugin.getAccountStatus(username);
+        if (!status.found()) {
+            sendPlayerMessage(sender, "messages.admin-account-not-found", username);
+            return;
+        }
+
+        UUID uuid = status.uuid();
+        Player online = uuid == null ? null : plugin.getServer().getPlayer(uuid);
+        sendDiagnosticsHeader(sender, "messages.admin-diagnostics-player-title");
+        sendDiagnosticEntry(sender, "Player", status.username());
+        sendDiagnosticEntry(sender, "UUID", String.valueOf(uuid));
+        sendDiagnosticEntry(sender, "Storage", status.storage());
+        sendDiagnosticEntry(sender, "Online", plainYesNo(status.online()));
+        sendDiagnosticEntry(sender, "Authenticated", plainYesNo(status.authenticated()));
+        sendDiagnosticEntry(sender, "Waiting auth", plainYesNo(status.waitingAuth()));
+        sendDiagnosticEntry(sender, "Auth mode", uuid == null ? "-" : plugin.getAuthMode(uuid));
+        sendDiagnosticEntry(sender, "Password usable", uuid == null ? "-" : plainYesNo(plugin.isPasswordUsable(uuid)));
+        sendDiagnosticEntry(sender, "PIN set", uuid == null ? "-" : plainYesNo(plugin.getPinHash(uuid) != null));
+        sendDiagnosticEntry(sender, "Two-factor", uuid == null ? "-" : plainYesNo(plugin.hasTwoFactorEnabled(uuid)));
+        sendDiagnosticEntry(sender, "Captcha required", online == null ? "-" : plainYesNo(plugin.isCaptchaRequired(online)));
+        sendDiagnosticEntry(sender, "Wrong password attempts", String.valueOf(status.currentWrongAttempts()));
+        sendDiagnosticEntry(sender, "Wrong PIN attempts", uuid == null ? "-" : String.valueOf(plugin.getWrongPinAttempts().getOrDefault(uuid, 0)));
+        sendDiagnosticEntry(sender, "Recovery method", uuid == null ? "-" : plugin.getRecoveryMethod(uuid));
+        sendDiagnosticEntry(sender, "Security question", uuid == null ? "-" : plainYesNo(plugin.getStoredSecurityQuestion(uuid) != null));
+        sendDiagnosticEntry(sender, "Backup codes", uuid == null ? "-" : String.valueOf(plugin.getBackupCodeCount(uuid)));
+        sendDiagnosticEntry(sender, "Last login", status.lastLogin());
+        sendDiagnosticEntry(sender, "Last IP", formatIp(status.lastIp()));
+        sendDiagnosticEntry(sender, "Last world", status.lastWorld());
+        sendDiagnosticEntry(sender, "Last location", status.lastLocation());
+        sendDiagnosticsFooter(sender);
+    }
+
+    private void sendDiagnosticsConfig(CommandSender sender) {
+        sendDiagnosticsHeader(sender, "messages.admin-diagnostics-config-title");
+        List<String> warnings = collectConfigWarnings();
+        if (warnings.isEmpty()) {
+            plugin.sendMessage(sender, "messages.admin-diagnostics-config-ok", true);
+        } else {
+            for (String warning : warnings) {
+                plugin.sendMessage(sender, "messages.admin-diagnostics-warning", true, Map.of("warning", warning));
+            }
+        }
+        sendDiagnosticsFooter(sender);
+    }
+
+    private void writeDiagnosticsDump(CommandSender sender) {
+        if (!plugin.getConfig().getBoolean("diagnostics.dump.enabled", true)) {
+            plugin.sendMessage(sender, "messages.admin-diagnostics-dump-disabled", true);
+            return;
+        }
+
+        File folder = new File(plugin.getDataFolder(), safeFolder(plugin.getConfig().getString("diagnostics.dump.folder", "diagnostics")));
+        if (!folder.exists() && !folder.mkdirs()) {
+            plugin.sendMessage(sender, "messages.admin-diagnostics-dump-failed", true);
+            return;
+        }
+
+        String timestamp = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
+        File file = new File(folder, "diagnostics-" + timestamp + ".txt");
+        try {
+            Files.write(file.toPath(), buildDiagnosticsDumpLines(), StandardCharsets.UTF_8);
+            cleanupOldDumps(folder);
+            plugin.sendMessage(sender, "messages.admin-diagnostics-dump-success", true, Map.of("file", file.getPath()));
+        } catch (IOException e) {
+            plugin.sendMessage(sender, "messages.admin-diagnostics-dump-failed", true);
+        }
+    }
+
+    private List<String> buildDiagnosticsDumpLines() {
+        List<String> lines = new ArrayList<>();
+        lines.add("Aethelguard Diagnostics");
+        lines.add("Generated at: " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()));
+        lines.add("");
+        lines.add("[Overview]");
+        lines.add("Plugin version: " + plugin.getDescription().getVersion());
+        lines.add("Storage mode: " + (plugin.getConfig().getBoolean("database.enabled", false) ? "MySQL" : "Local YAML"));
+        lines.add("Database: " + databaseHealth());
+        lines.add("Default language: " + plugin.getConfig().getString("default-language", "TR"));
+        lines.add("Console language: " + plugin.getConfig().getString("console-language", "en") + " / " + plugin.getConfig().getString("console-text-mode", "ascii"));
+        lines.add("PIN: " + enabledState("auth-settings.pin.enabled") + ", GUI " + enabledState("auth-settings.pin.gui.enabled") + ", theme " + plugin.getConfig().getString("auth-settings.pin.gui.theme", "quartz"));
+        lines.add("Captcha: " + enabledState("auth-settings.captcha.enabled") + ", types " + plugin.getConfig().getStringList("auth-settings.captcha.types"));
+        lines.add("Two-factor: " + enabledState("auth-settings.two-factor.enabled"));
+        lines.add("Recovery: " + enabledState("recovery.enabled"));
+        lines.add("Adaptive security: " + enabledState("adaptive-security.enabled"));
+        lines.add("VPN check: " + enabledState("adaptive-security.suspicious-ip-extra-captcha.vpn-check.enabled"));
+        lines.add("Sessions: " + enabledState("auth-settings.sessions.enabled") + ", " + plugin.getConfig().getLong("auth-settings.sessions.duration-minutes", 10L) + " minutes");
+        lines.add("Local users folder: " + localUsersSummary());
+        lines.add("Active auth sessions: " + plugin.getAuthSessionSummaries().size());
+        lines.add("Waiting auth players: " + plugin.getUnauthenticatedPlayers().size());
+        lines.add("Captcha challenges: " + plugin.getCaptchaChallengeCount());
+        lines.add("Pending 2FA players: " + plugin.getPendingTwoFactorCount());
+        lines.add("");
+        lines.add("[Config warnings]");
+        List<String> warnings = collectConfigWarnings();
+        if (warnings.isEmpty()) {
+            lines.add("No warnings found.");
+        } else {
+            warnings.forEach(warning -> lines.add("- " + warning));
+        }
+        return lines;
+    }
+
+    private List<String> collectConfigWarnings() {
+        List<String> warnings = new ArrayList<>();
+        String theme = plugin.getConfig().getString("auth-settings.pin.gui.theme", "quartz");
+        if (theme == null || !plugin.getPinGuiThemes().contains(theme.toLowerCase(Locale.ROOT))) {
+            warnings.add("Unknown PIN GUI theme: " + theme);
+        }
+        if (plugin.getConfig().getBoolean("auth-settings.pin.enabled", false)
+                && plugin.defaultAuthMode().equals("PIN")
+                && !plugin.getConfig().getBoolean("auth-settings.pin.numeric-only", true)) {
+            warnings.add("PIN GUI works best with auth-settings.pin.numeric-only enabled.");
+        }
+        String tableName = plugin.getConfig().getString("database.table-name", "aethelguard_auth");
+        if (tableName == null || !tableName.matches("[A-Za-z0-9_]+")) {
+            warnings.add("Database table-name contains invalid characters.");
+        }
+        String localFolder = plugin.getConfig().getString("storage.local-users-folder", "users");
+        if (localFolder == null || localFolder.isBlank() || localFolder.contains("..") || localFolder.contains("/") || localFolder.contains("\\")) {
+            warnings.add("storage.local-users-folder is unsafe or invalid.");
+        }
+        if (plugin.getConfig().getInt("diagnostics.max-dumps-to-keep", 10) < 1) {
+            warnings.add("diagnostics.max-dumps-to-keep should be at least 1.");
+        }
+
+        org.bukkit.configuration.ConfigurationSection sounds = plugin.getConfig().getConfigurationSection("auth-settings.sounds");
+        if (sounds != null) {
+            for (String key : sounds.getKeys(false)) {
+                if (key.equals("enabled")) continue;
+                String path = "auth-settings.sounds." + key + ".sound";
+                String soundName = plugin.getConfig().getString(path, "");
+                if (soundName != null && !soundName.isBlank() && !isValidSound(soundName)) {
+                    warnings.add("Invalid sound at " + path + ": " + soundName);
+                }
+            }
+        }
+        return warnings;
+    }
+
+    private boolean isValidSound(String soundName) {
+        String normalized = soundName.toLowerCase(Locale.ROOT).replace('_', '.');
+        NamespacedKey key = normalized.contains(":")
+                ? NamespacedKey.fromString(normalized)
+                : NamespacedKey.minecraft(normalized);
+        if (key != null && Registry.SOUNDS.get(key) != null) {
+            return true;
+        }
+        try {
+            Sound.valueOf(soundName.toUpperCase(Locale.ROOT));
+            return true;
+        } catch (IllegalArgumentException ignored) {
+            return false;
+        }
+    }
+
+    private String databaseHealth() {
+        if (!plugin.getConfig().getBoolean("database.enabled", false)) {
+            return "disabled";
+        }
+        try (Connection conn = plugin.getDatabaseManager().getConnection()) {
+            return conn == null ? "not connected" : "connected";
+        } catch (SQLException e) {
+            return "error: " + e.getMessage();
+        }
+    }
+
+    private String localUsersSummary() {
+        File folder = plugin.getLocalUsersFolder();
+        File[] users = folder.listFiles((dir, name) -> name.endsWith(".yml"));
+        return (folder.exists() ? "exists" : "missing") + ", " + (users == null ? 0 : users.length) + " user file(s)";
+    }
+
+    private String userIndexSummary() {
+        File index = new File(plugin.getLocalUsersFolder(), plugin.getConfig().getString("status.user-index-file", "user-index.txt"));
+        return index.exists() ? "exists" : "missing";
+    }
+
+    private String enabledState(String path) {
+        return plugin.getConfig().getBoolean(path, true) ? "enabled" : "disabled";
+    }
+
+    private String plainYesNo(boolean value) {
+        return value ? "yes" : "no";
+    }
+
+    private String formatIp(String ip) {
+        if (!plugin.getConfig().getBoolean("diagnostics.include-player-ip", false)) {
+            return "hidden";
+        }
+        if (!plugin.getConfig().getBoolean("diagnostics.mask-sensitive-data", true)) {
+            return ip == null || ip.isBlank() ? "-" : ip;
+        }
+        return maskIp(ip);
+    }
+
+    private String maskIp(String ip) {
+        if (ip == null || ip.isBlank() || ip.equals("-") || ip.equalsIgnoreCase("UNKNOWN")) return "-";
+        if (ip.contains(":")) {
+            int split = ip.indexOf(':');
+            return split <= 0 ? "masked" : ip.substring(0, split) + ":xxxx";
+        }
+        String[] parts = ip.split("\\.");
+        if (parts.length != 4) return "masked";
+        return parts[0] + "." + parts[1] + "." + parts[2] + ".xxx";
+    }
+
+    private String safeFolder(String folder) {
+        if (folder == null || folder.isBlank() || folder.contains("..") || folder.contains("/") || folder.contains("\\")) {
+            return "diagnostics";
+        }
+        return folder;
+    }
+
+    private void cleanupOldDumps(File folder) {
+        File[] dumps = folder.listFiles((dir, name) -> name.startsWith("diagnostics-") && name.endsWith(".txt"));
+        if (dumps == null) return;
+        int max = Math.max(1, plugin.getConfig().getInt("diagnostics.max-dumps-to-keep", 10));
+        if (dumps.length <= max) return;
+        List<File> files = new ArrayList<>(List.of(dumps));
+        files.sort(Comparator.comparingLong(File::lastModified));
+        for (int i = 0; i < files.size() - max; i++) {
+            files.get(i).delete();
+        }
+    }
+
+    private void sendDiagnosticsHeader(CommandSender sender, String titlePath) {
+        plugin.sendMessage(sender, "messages.admin-diagnostics-line", false);
+        plugin.sendMessage(sender, titlePath, false);
+        plugin.sendMessage(sender, "messages.admin-diagnostics-line", false);
+    }
+
+    private void sendDiagnosticsFooter(CommandSender sender) {
+        plugin.sendMessage(sender, "messages.admin-diagnostics-line", false);
+    }
+
+    private void sendDiagnosticEntry(CommandSender sender, String key, String value) {
+        plugin.sendMessage(sender, "messages.admin-diagnostics-entry", false,
+                Map.of("key", key, "value", value == null || value.isBlank() ? "-" : value));
     }
 
     private boolean unregisterAccount(String username) {
@@ -516,6 +829,7 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
                     "session",
                     "clearsession",
                     "clearsessions",
+                    "diagnostics",
                     "pingui",
                     "unregister",
                     "changepassword",
@@ -526,6 +840,14 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
 
         if (args.length == 2 && List.of("status", "ipinfo", "accounts", "session", "clearsession", "unregister", "changepassword", "unlogin", "logout").contains(args[0].toLowerCase(Locale.ROOT))) {
             return CommandCompletions.onlinePlayers(plugin.getServer(), args[1]);
+        }
+
+        if (args.length == 2 && args[0].equalsIgnoreCase("diagnostics")) {
+            return CommandCompletions.filter(args[1], List.of("player", "config", "dump"));
+        }
+
+        if (args.length == 3 && args[0].equalsIgnoreCase("diagnostics") && args[1].equalsIgnoreCase("player")) {
+            return CommandCompletions.onlinePlayers(plugin.getServer(), args[2]);
         }
 
         if (args.length == 2 && args[0].equalsIgnoreCase("pingui")) {

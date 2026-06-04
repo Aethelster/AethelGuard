@@ -41,6 +41,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.security.SecureRandom;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -585,6 +587,7 @@ public final class Aethelguard extends JavaPlugin {
 
     public boolean reloadPluginSettings() {
         try {
+            backupConfigAndMessagesBeforeReload();
             reloadConfig();
             validateConfig();
             saveDefaultLangFiles();
@@ -629,6 +632,96 @@ public final class Aethelguard extends JavaPlugin {
                 updateAccountSnapshot(player, false);
             }
         }
+    }
+
+    private void backupConfigAndMessagesBeforeReload() {
+        if (!getConfig().getBoolean("backups.reload.enabled", true)) return;
+
+        try {
+            File backupRoot = new File(getDataFolder(), getSafeBackupFolderName("backups.reload.folder", "backups/reload"));
+            String timestamp = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
+            File backupFolder = new File(backupRoot, timestamp);
+
+            int copied = 0;
+            if (getConfig().getBoolean("backups.reload.include-config", true)) {
+                copied += copyIfExists(new File(getDataFolder(), "config.yml"), new File(backupFolder, "config/config.yml"));
+            }
+            if (getConfig().getBoolean("backups.reload.include-messages", true)) {
+                copied += copyYamlFiles(new File(getDataFolder(), "messages"), new File(backupFolder, "messages"));
+            }
+            if (getConfig().getBoolean("backups.reload.include-security-questions", true)) {
+                copied += copyYamlFiles(new File(getDataFolder(), "security_questions"), new File(backupFolder, "security_questions"));
+            }
+
+            if (copied > 0) {
+                cleanupOldReloadBackups(backupRoot);
+                logConfigInfo(
+                        "Reload oncesi " + copied + " dosya yedeklendi: " + backupFolder.getPath(),
+                        "Backed up " + copied + " file(s) before reload: " + backupFolder.getPath()
+                );
+            }
+        } catch (IOException e) {
+            logWarning("Reload yedegi olusturulamadi.", "Could not create reload backup.");
+            e.printStackTrace();
+        }
+    }
+
+    private int copyYamlFiles(File sourceFolder, File targetFolder) throws IOException {
+        File[] files = sourceFolder.listFiles((dir, name) -> name.endsWith(".yml"));
+        if (files == null) return 0;
+
+        int copied = 0;
+        for (File file : files) {
+            copied += copyIfExists(file, new File(targetFolder, file.getName()));
+        }
+        return copied;
+    }
+
+    private int copyIfExists(File source, File target) throws IOException {
+        if (!source.exists() || !source.isFile()) return 0;
+        File parent = target.getParentFile();
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs();
+        }
+        Files.copy(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
+        return 1;
+    }
+
+    private void cleanupOldReloadBackups(File backupRoot) {
+        File[] folders = backupRoot.listFiles(File::isDirectory);
+        if (folders == null) return;
+
+        int max = Math.max(1, getConfig().getInt("backups.reload.max-backups-to-keep", 10));
+        if (folders.length <= max) return;
+
+        List<File> sorted = new ArrayList<>(List.of(folders));
+        sorted.sort(Comparator.comparingLong(File::lastModified));
+        for (int i = 0; i < sorted.size() - max; i++) {
+            deleteRecursively(sorted.get(i));
+        }
+    }
+
+    private void deleteRecursively(File file) {
+        if (file == null || !file.exists()) return;
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteRecursively(child);
+                }
+            }
+        }
+        file.delete();
+    }
+
+    private String getSafeBackupFolderName(String path, String fallback) {
+        String folderName = getConfig().getString(path, fallback);
+        if (folderName == null || folderName.isBlank() || folderName.contains("..") || folderName.startsWith("/") || folderName.startsWith("\\")) {
+            logWarning("Gecersiz yedek klasoru ayari: " + path + ". Varsayilan klasor kullaniliyor.",
+                    "Invalid backup folder config: " + path + ". Using default folder.");
+            return fallback;
+        }
+        return folderName;
     }
 
     public void validateConfig() {
@@ -882,7 +975,19 @@ public final class Aethelguard extends JavaPlugin {
                 Map.entry("storage.local-users-folder", "users"),
                 Map.entry("status.enabled", true),
                 Map.entry("status.create-local-users-folder", true),
-                Map.entry("status.user-index-file", "user-index.txt")
+                Map.entry("status.user-index-file", "user-index.txt"),
+                Map.entry("diagnostics.enabled", true),
+                Map.entry("diagnostics.dump.enabled", true),
+                Map.entry("diagnostics.dump.folder", "diagnostics"),
+                Map.entry("diagnostics.mask-sensitive-data", true),
+                Map.entry("diagnostics.include-player-ip", false),
+                Map.entry("diagnostics.max-dumps-to-keep", 10),
+                Map.entry("backups.reload.enabled", true),
+                Map.entry("backups.reload.folder", "backups/reload"),
+                Map.entry("backups.reload.include-config", true),
+                Map.entry("backups.reload.include-messages", true),
+                Map.entry("backups.reload.include-security-questions", true),
+                Map.entry("backups.reload.max-backups-to-keep", 10)
         );
 
         for (Map.Entry<String, Object> entry : defaults.entrySet()) {
@@ -3096,6 +3201,22 @@ public final class Aethelguard extends JavaPlugin {
     public Map<UUID, Location> getPreviousLocations() { return previousLocations; }
     public Map<UUID, Integer> getWrongPasswordAttempts() { return wrongPasswordAttempts; }
     public Map<UUID, Integer> getWrongPinAttempts() { return wrongPinAttempts; }
+
+    public int getCaptchaChallengeCount() {
+        return captchaChallenges.size();
+    }
+
+    public int getPendingTwoFactorCount() {
+        return pendingTwoFactorPlayers.size();
+    }
+
+    public boolean hasTwoFactorEnabled(UUID uuid) {
+        return getTwoFactorSecret(uuid) != null;
+    }
+
+    public int getBackupCodeCount(UUID uuid) {
+        return getBackupCodeHashes(uuid).size();
+    }
 
     public void markAuthTimeout(Player player, long timeoutTicks) {
         long timeoutMillis = Math.max(1L, timeoutTicks) * 50L;

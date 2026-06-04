@@ -10,6 +10,19 @@
 # ========================================================================
 
 messages:
+  admin-diagnostics-disabled: "<red>Diagnostics sistemi config.yml içinde kapalı."
+  admin-diagnostics-usage: "<gray>Kullanım: <white>/aethelguard diagnostics<gray>, <white>/aethelguard diagnostics player <oyuncu><gray>, <white>/aethelguard diagnostics config<gray>, <white>/aethelguard diagnostics dump"
+  admin-diagnostics-player-usage: "<gray>Kullanım: <white>/aethelguard diagnostics player <oyuncu>"
+  admin-diagnostics-line: "<dark_gray>--------------------------------------------------"
+  admin-diagnostics-title: "<yellow><bold>Aethelguard Diagnostics</bold>"
+  admin-diagnostics-player-title: "<yellow><bold>Aethelguard Oyuncu Diagnostics</bold>"
+  admin-diagnostics-config-title: "<yellow><bold>Aethelguard Config Diagnostics</bold>"
+  admin-diagnostics-entry: "<gray>{key}: <white>{value}"
+  admin-diagnostics-warning: "<yellow>Uyarı: <white>{warning}"
+  admin-diagnostics-config-ok: "<green>Config uyarısı bulunamadı."
+  admin-diagnostics-dump-disabled: "<red>Diagnostic dump sistemi config.yml içinde kapalı."
+  admin-diagnostics-dump-success: "<green>Diagnostic dump kaydedildi: <white>{file}"
+  admin-diagnostics-dump-failed: "<red>Diagnostic dump yazılamadı. Klasör izinlerini kontrol edin."
   admin-pingui-preview-usage: "<gray>Kullanım: <white>/aethelguard pingui preview <forest-green|quartz|pumpkin|netherite|monitor-green|monitor-red>"
   admin-pingui-preview-opened: "<green>PIN GUI önizlemesi açıldı. Tema: <yellow>{theme}"
   pin-gui-title-preview: "Aethelguard PIN GUI Önizleme"

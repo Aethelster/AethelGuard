@@ -12,7 +12,7 @@
 messages:
   # -------------------- ADMIN COMMANDS --------------------
   admin-no-permission: "<red>You do not have permission to use this command."
-  admin-usage: "<gray>Usage: <white>/aethelguard reload<gray>, <white>/aethelguard status <player><gray>, <white>/aethelguard ipinfo <player|ip><gray>, <white>/aethelguard accounts <player|ip><gray>, <white>/aethelguard sessions<gray>, <white>/aethelguard session <player><gray>, <white>/aethelguard clearsession <player><gray>, <white>/aethelguard clearsessions<gray>, <white>/aethelguard pingui preview <theme><gray>, <white>/aethelguard unregister <player><gray>, <white>/aethelguard changepassword <player> <newPassword><gray>, <white>/aethelguard unlogin <player>"
+  admin-usage: "<gray>Usage: <white>/aethelguard reload<gray>, <white>/aethelguard diagnostics [player|config|dump]<gray>, <white>/aethelguard status <player><gray>, <white>/aethelguard ipinfo <player|ip><gray>, <white>/aethelguard accounts <player|ip><gray>, <white>/aethelguard sessions<gray>, <white>/aethelguard pingui preview <theme><gray>, <white>/aethelguard unregister <player><gray>, <white>/aethelguard changepassword <player> <newPassword><gray>, <white>/aethelguard unlogin <player>"
   admin-reload-success: "<green>Config and language files have been reloaded."
   admin-reload-failed: "<red>Reload failed. Please check the console."
 
@@ -59,6 +59,19 @@ messages:
   admin-clear-sessions-success: "<green>Cleared <white>{count} <green>auth session(s)."
   admin-pingui-preview-usage: "<gray>Usage: <white>/aethelguard pingui preview <forest-green|quartz|pumpkin|netherite|monitor-green|monitor-red>"
   admin-pingui-preview-opened: "<green>Opened PIN GUI preview with theme: <yellow>{theme}"
+  admin-diagnostics-disabled: "<red>Diagnostics are disabled in config.yml."
+  admin-diagnostics-usage: "<gray>Usage: <white>/aethelguard diagnostics<gray>, <white>/aethelguard diagnostics player <player><gray>, <white>/aethelguard diagnostics config<gray>, <white>/aethelguard diagnostics dump"
+  admin-diagnostics-player-usage: "<gray>Usage: <white>/aethelguard diagnostics player <player>"
+  admin-diagnostics-line: "<dark_gray>--------------------------------------------------"
+  admin-diagnostics-title: "<yellow><bold>Aethelguard Diagnostics</bold>"
+  admin-diagnostics-player-title: "<yellow><bold>Aethelguard Player Diagnostics</bold>"
+  admin-diagnostics-config-title: "<yellow><bold>Aethelguard Config Diagnostics</bold>"
+  admin-diagnostics-entry: "<gray>{key}: <white>{value}"
+  admin-diagnostics-warning: "<yellow>Warning: <white>{warning}"
+  admin-diagnostics-config-ok: "<green>No config warnings were found."
+  admin-diagnostics-dump-disabled: "<red>Diagnostic dumps are disabled in config.yml."
+  admin-diagnostics-dump-success: "<green>Diagnostic dump saved: <white>{file}"
+  admin-diagnostics-dump-failed: "<red>Could not write diagnostic dump. Please check folder permissions."
 
   admin-unregister-usage: "<gray>Usage: <white>/aethelguard unregister <player>"
   admin-account-not-found: "<red>No account record found for <yellow>{player}<red>."

@@ -55,6 +55,41 @@ status:
   create-local-users-folder: true
   # Text index written inside the users folder. It maps usernames to UUID file names.
   user-index-file: "user-index.txt"
+diagnostics:
+  # Enables /aethelguard diagnostics commands.
+  # Diagnostics helps admins quickly understand plugin health, storage state,
+  # auth settings, and player auth state without reading many files manually.
+  enabled: true
+  dump:
+    # Enables /aethelguard diagnostics dump.
+    # The dump is a support-friendly text report written without passwords,
+    # PIN hashes, 2FA secrets, backup codes, or other sensitive secrets.
+    enabled: true
+    # Folder under plugins/Aethelguard/ where diagnostic reports are saved.
+    folder: "diagnostics"
+  # true: masks sensitive values such as IP addresses in diagnostic output.
+  # Recommended for screenshots, public support tickets, and Discord sharing.
+  mask-sensitive-data: true
+  # false: player IP addresses are hidden from diagnostics player output.
+  # true: IP addresses can be shown, but mask-sensitive-data may still mask them.
+  include-player-ip: false
+  # Oldest diagnostic dump files are deleted when this limit is exceeded.
+  max-dumps-to-keep: 10
+backups:
+  reload:
+    # Creates a timestamped backup before /aethelguard reload changes or syncs files.
+    # This protects config.yml, messages files, and security question files from accidental edits.
+    enabled: true
+    # Folder under plugins/Aethelguard/ where reload backups are stored.
+    folder: "backups/reload"
+    # Backs up config.yml before the automatic config sync system can add, move, or clean keys.
+    include-config: true
+    # Backs up every messages_*.yml file from plugins/Aethelguard/messages/.
+    include-messages: true
+    # Backs up every security_questions_*.yml file from plugins/Aethelguard/security_questions/.
+    include-security-questions: true
+    # Oldest reload backup folders are deleted when this limit is exceeded.
+    max-backups-to-keep: 10
 console-logging:
   # Hides vanilla connection/auth noise such as join/quit, UUID, lost connection,
   # logged in with entity id, and issued server command lines.
