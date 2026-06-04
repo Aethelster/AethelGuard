@@ -14,6 +14,8 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.Date;
+import java.util.UUID;
 
 public class PlayerPasswordCommand implements CommandExecutor {
 
@@ -58,47 +60,47 @@ public class PlayerPasswordCommand implements CommandExecutor {
             return true;
         }
 
+        UUID uuid = player.getUniqueId();
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
-            String storedHash = getStoredPassword(player);
+            String storedHash = getStoredPassword(uuid);
             if (storedHash == null) {
-                plugin.getServer().getScheduler().runTask(plugin, () ->
-                        plugin.sendMessage(player, "messages.not-registered", true)
-                );
+                plugin.getServer().getScheduler().runTask(plugin, () -> sendIfOnline(player, "messages.not-registered"));
                 return;
             }
 
             if (!BCrypt.checkpw(args[0], storedHash)) {
-                plugin.getServer().getScheduler().runTask(plugin, () ->
-                        plugin.sendMessage(player, "messages.change-password-wrong-current", true)
-                );
+                plugin.getServer().getScheduler().runTask(plugin, () -> sendIfOnline(player, "messages.change-password-wrong-current"));
                 return;
             }
 
             String newHash = BCrypt.hashpw(args[1], BCrypt.gensalt());
-            if (updatePassword(player, newHash)) {
-                plugin.markSecurityCooldown(player, "changepassword");
-                plugin.getServer().getScheduler().runTask(plugin, () ->
-                        plugin.sendMessage(player, "messages.change-password-success", true)
-                );
+            if (updatePassword(uuid, newHash)) {
+                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    if (!player.isOnline()) return;
+                    plugin.markSecurityCooldown(player, "changepassword");
+                    plugin.sendMessage(player, "messages.change-password-success", true);
 
-                if (plugin.getConfig().getBoolean("console-logging.log-auth-state-changes", true)) {
-                    plugin.logInfo(
-                            player.getName() + " kendi şifresini değiştirdi.",
-                            player.getName() + " changed their own password."
-                    );
-                }
+                    if (plugin.getConfig().getBoolean("console-logging.log-auth-state-changes", true)) {
+                        plugin.logInfo(
+                                player.getName() + " kendi şifresini değiştirdi.",
+                                player.getName() + " changed their own password."
+                        );
+                    }
+                });
             } else {
-                plugin.getServer().getScheduler().runTask(plugin, () ->
-                        plugin.sendMessage(player, "messages.change-password-error", true)
-                );
+                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    if (player.isOnline()) {
+                        plugin.sendMessage(player, "messages.change-password-error", true);
+                    }
+                });
             }
         });
 
         return true;
     }
 
-    private String getStoredPassword(Player player) {
-        String uuid = player.getUniqueId().toString();
+    private String getStoredPassword(UUID playerUuid) {
+        String uuid = playerUuid.toString();
         if (!plugin.getConfig().getBoolean("database.enabled", false)) {
             File userFile = new File(plugin.getLocalUsersFolder(), uuid + ".yml");
             if (!userFile.exists()) return null;
@@ -118,8 +120,8 @@ public class PlayerPasswordCommand implements CommandExecutor {
         return null;
     }
 
-    private boolean updatePassword(Player player, String hash) {
-        String uuid = player.getUniqueId().toString();
+    private boolean updatePassword(UUID playerUuid, String hash) {
+        String uuid = playerUuid.toString();
         if (!plugin.getConfig().getBoolean("database.enabled", false)) {
             File userFile = new File(plugin.getLocalUsersFolder(), uuid + ".yml");
             if (!userFile.exists()) return false;
@@ -127,7 +129,7 @@ public class PlayerPasswordCommand implements CommandExecutor {
             FileConfiguration config = YamlConfiguration.loadConfiguration(userFile);
             config.set("password", hash);
             config.set("password.usable", true);
-            config.set("security.last-password-change", java.time.LocalDateTime.now().toString());
+            config.set("security.last-password-change", plugin.formatDate(new Date()));
             try {
                 config.save(userFile);
                 return true;
@@ -145,6 +147,12 @@ public class PlayerPasswordCommand implements CommandExecutor {
             }
         } catch (SQLException ignored) {
             return false;
+        }
+    }
+
+    private void sendIfOnline(Player player, String messagePath) {
+        if (player.isOnline()) {
+            plugin.sendMessage(player, messagePath, true);
         }
     }
 }

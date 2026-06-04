@@ -15,7 +15,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Map;
 import java.util.UUID;
@@ -78,18 +77,22 @@ public class AuthCommand implements CommandExecutor {
             return;
         }
 
+        String username = player.getName();
+        Location registrationLocation = player.getLocation().clone();
+        boolean bypassIpLimit = hasIpLimitBypass(player);
+
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
-            if (plugin.isAccountRegistered(player.getUniqueId())) {
+            if (plugin.isAccountRegistered(playerUUID)) {
                 plugin.getServer().getScheduler().runTask(plugin, () ->
-                        plugin.sendMessage(player, "messages.already-registered", true)
+                        sendIfOnline(player, "messages.already-registered")
                 );
                 return;
             }
 
             int maxAccounts = plugin.getConfig().getInt("auth-settings.registration.ip-limit.max-accounts", 2);
-            if (isIpRegistrationLimitReached(player, ipAddress, maxAccounts)) {
+            if (isIpRegistrationLimitReached(ipAddress, maxAccounts, bypassIpLimit)) {
                 plugin.getServer().getScheduler().runTask(plugin, () ->
-                        plugin.sendMessage(player, "messages.ip-registration-limit-reached", true,
+                        sendIfOnline(player, "messages.ip-registration-limit-reached",
                                 java.util.Map.of("limit", String.valueOf(maxAccounts)))
                 );
                 return;
@@ -97,10 +100,10 @@ public class AuthCommand implements CommandExecutor {
 
             String hashedPassword = BCrypt.hashpw(args[0], BCrypt.gensalt());
 
-            if (registerPlayer(uuidStr, player.getName(), hashedPassword, player, ipAddress)) {
-                plugin.getUnauthenticatedPlayers().remove(playerUUID);
-
+            if (registerPlayer(uuidStr, username, hashedPassword, registrationLocation, ipAddress)) {
                 plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    if (!player.isOnline()) return;
+                    plugin.getUnauthenticatedPlayers().remove(playerUUID);
                     plugin.playConfiguredSound(player, "auth-settings.sounds.register-success");
                     plugin.completeLogin(player, false);
                     plugin.rememberAuthSession(player);
@@ -111,7 +114,7 @@ public class AuthCommand implements CommandExecutor {
                 });
             } else {
                 plugin.getServer().getScheduler().runTask(plugin, () ->
-                        plugin.sendMessage(player, "messages.register-error", true)
+                        sendIfOnline(player, "messages.register-error")
                 );
             }
         });
@@ -142,23 +145,20 @@ public class AuthCommand implements CommandExecutor {
 
             if (storedHash == null) {
                 plugin.getServer().getScheduler().runTask(plugin, () ->
-                        plugin.sendMessage(player, "messages.not-registered", true)
+                        sendIfOnline(player, "messages.not-registered")
                 );
                 return;
             }
 
             if (BCrypt.checkpw(args[0], storedHash)) {
-                if (plugin.isTwoFactorEnabled(player)) {
-                    plugin.getServer().getScheduler().runTask(plugin, () ->
-                            plugin.startTwoFactorLogin(player)
-                    );
-                    return;
-                }
-
-                plugin.getUnauthenticatedPlayers().remove(playerUUID);
-                plugin.getWrongPasswordAttempts().remove(playerUUID);
-
                 plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    if (!player.isOnline()) return;
+                    if (plugin.isTwoFactorEnabled(player)) {
+                            plugin.startTwoFactorLogin(player);
+                            return;
+                    }
+                    plugin.getUnauthenticatedPlayers().remove(playerUUID);
+                    plugin.getWrongPasswordAttempts().remove(playerUUID);
                     plugin.playConfiguredSound(player, "auth-settings.sounds.login-success");
                     plugin.completeLogin(player, true);
                     plugin.rememberAuthSession(player);
@@ -168,7 +168,11 @@ public class AuthCommand implements CommandExecutor {
                 return;
             }
 
-            handleWrongPassword(player, playerUUID);
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                if (player.isOnline()) {
+                    handleWrongPassword(player, playerUUID);
+                }
+            });
         });
     }
 
@@ -235,9 +239,8 @@ public class AuthCommand implements CommandExecutor {
         }
     }
 
-    private boolean registerPlayer(String uuid, String username, String hashedPassword, Player player, String ipAddress) {
+    private boolean registerPlayer(String uuid, String username, String hashedPassword, Location location, String ipAddress) {
         String now = currentDate();
-        Location location = player.getLocation();
 
         if (!plugin.getConfig().getBoolean("database.enabled", false)) {
             File userFile = new File(plugin.getLocalUsersFolder(), uuid + ".yml");
@@ -338,14 +341,18 @@ public class AuthCommand implements CommandExecutor {
         }
     }
 
-    private boolean isIpRegistrationLimitReached(Player player, String ipAddress, int maxAccounts) {
+    private boolean isIpRegistrationLimitReached(String ipAddress, int maxAccounts, boolean bypassIpLimit) {
         if (!plugin.getConfig().getBoolean("auth-settings.registration.ip-limit.enabled", true)) return false;
         if (maxAccounts <= 0) return false;
 
-        String bypassPermission = plugin.getConfig().getString("auth-settings.registration.ip-limit.bypass-permission", "aethelguard.bypass.iplimit");
-        if (bypassPermission != null && !bypassPermission.isBlank() && player.hasPermission(bypassPermission)) return false;
+        if (bypassIpLimit) return false;
 
         return countAccountsByIp(ipAddress) >= maxAccounts;
+    }
+
+    private boolean hasIpLimitBypass(Player player) {
+        String bypassPermission = plugin.getConfig().getString("auth-settings.registration.ip-limit.bypass-permission", "aethelguard.bypass.iplimit");
+        return bypassPermission != null && !bypassPermission.isBlank() && player.hasPermission(bypassPermission);
     }
 
     private int countAccountsByIp(String ipAddress) {
@@ -379,8 +386,20 @@ public class AuthCommand implements CommandExecutor {
         return 0;
     }
 
+    private void sendIfOnline(Player player, String messagePath) {
+        if (player.isOnline()) {
+            plugin.sendMessage(player, messagePath, true);
+        }
+    }
+
+    private void sendIfOnline(Player player, String messagePath, Map<String, String> placeholders) {
+        if (player.isOnline()) {
+            plugin.sendMessage(player, messagePath, true, placeholders);
+        }
+    }
+
     private String currentDate() {
-        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
+        return plugin.formatDate(new Date());
     }
 
     private String getStoredPassword(String uuid) {

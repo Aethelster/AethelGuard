@@ -310,26 +310,39 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
 
     private void sendDiagnosticsOverview(CommandSender sender) {
         sendDiagnosticsHeader(sender, "messages.admin-diagnostics-title");
-        sendDiagnosticEntry(sender, "Plugin version", plugin.getDescription().getVersion());
-        sendDiagnosticEntry(sender, "Storage mode", plugin.getConfig().getBoolean("database.enabled", false) ? "MySQL" : "Local YAML");
-        sendDiagnosticEntry(sender, "Database", databaseHealth());
-        sendDiagnosticEntry(sender, "Default language", plugin.getConfig().getString("default-language", "TR"));
-        sendDiagnosticEntry(sender, "Console language", plugin.getConfig().getString("console-language", "en") + " / " + plugin.getConfig().getString("console-text-mode", "ascii"));
-        sendDiagnosticEntry(sender, "PIN", enabledState("auth-settings.pin.enabled") + ", GUI " + enabledState("auth-settings.pin.gui.enabled") + ", theme " + plugin.getConfig().getString("auth-settings.pin.gui.theme", "quartz"));
-        sendDiagnosticEntry(sender, "Default auth mode", plugin.defaultAuthMode());
-        sendDiagnosticEntry(sender, "Captcha", enabledState("auth-settings.captcha.enabled") + ", types " + plugin.getConfig().getStringList("auth-settings.captcha.types"));
-        sendDiagnosticEntry(sender, "Two-factor", enabledState("auth-settings.two-factor.enabled"));
-        sendDiagnosticEntry(sender, "Recovery", enabledState("recovery.enabled"));
-        sendDiagnosticEntry(sender, "Adaptive security", enabledState("adaptive-security.enabled"));
-        sendDiagnosticEntry(sender, "VPN check", enabledState("adaptive-security.suspicious-ip-extra-captcha.vpn-check.enabled") + ", providers " + plugin.getConfig().getStringList("adaptive-security.suspicious-ip-extra-captcha.vpn-check.providers"));
-        sendDiagnosticEntry(sender, "Sessions", enabledState("auth-settings.sessions.enabled") + ", " + plugin.getConfig().getLong("auth-settings.sessions.duration-minutes", 10L) + " minutes");
-        sendDiagnosticEntry(sender, "Status system", enabledState("status.enabled"));
-        sendDiagnosticEntry(sender, "Local users folder", localUsersSummary());
-        sendDiagnosticEntry(sender, "User index", userIndexSummary());
-        sendDiagnosticEntry(sender, "Active auth sessions", String.valueOf(plugin.getAuthSessionSummaries().size()));
-        sendDiagnosticEntry(sender, "Waiting auth players", String.valueOf(plugin.getUnauthenticatedPlayers().size()));
-        sendDiagnosticEntry(sender, "Captcha challenges", String.valueOf(plugin.getCaptchaChallengeCount()));
-        sendDiagnosticEntry(sender, "Pending 2FA players", String.valueOf(plugin.getPendingTwoFactorCount()));
+        sendDiagnosticEntry(sender, diagnosticLabel("plugin-version"), plugin.getDescription().getVersion());
+        sendDiagnosticEntry(sender, diagnosticLabel("storage-mode"), plugin.getConfig().getBoolean("database.enabled", false) ? "MySQL" : "Local YAML");
+        sendDiagnosticEntry(sender, diagnosticLabel("database"), databaseHealth());
+        sendDiagnosticEntry(sender, diagnosticLabel("default-language"), plugin.getConfig().getString("default-language", "TR"));
+        sendDiagnosticEntry(sender, diagnosticLabel("console-language"), plugin.getConfig().getString("console-language", "en") + " / " + plugin.getConfig().getString("console-text-mode", "ascii"));
+        sendDiagnosticEntry(sender, diagnosticLabel("pin"), diagnosticText("pin-summary", Map.of(
+                "pin", enabledState("auth-settings.pin.enabled"),
+                "gui", enabledState("auth-settings.pin.gui.enabled"),
+                "theme", plugin.getConfig().getString("auth-settings.pin.gui.theme", "quartz")
+        )));
+        sendDiagnosticEntry(sender, diagnosticLabel("default-auth-mode"), plugin.defaultAuthMode());
+        sendDiagnosticEntry(sender, diagnosticLabel("captcha"), diagnosticText("captcha-summary", Map.of(
+                "state", enabledState("auth-settings.captcha.enabled"),
+                "types", plugin.getConfig().getStringList("auth-settings.captcha.types").toString()
+        )));
+        sendDiagnosticEntry(sender, diagnosticLabel("two-factor"), enabledState("auth-settings.two-factor.enabled"));
+        sendDiagnosticEntry(sender, diagnosticLabel("recovery"), enabledState("recovery.enabled"));
+        sendDiagnosticEntry(sender, diagnosticLabel("adaptive-security"), enabledState("adaptive-security.enabled"));
+        sendDiagnosticEntry(sender, diagnosticLabel("vpn-check"), diagnosticText("vpn-summary", Map.of(
+                "state", enabledState("adaptive-security.suspicious-ip-extra-captcha.vpn-check.enabled"),
+                "providers", plugin.getConfig().getStringList("adaptive-security.suspicious-ip-extra-captcha.vpn-check.providers").toString()
+        )));
+        sendDiagnosticEntry(sender, diagnosticLabel("sessions"), diagnosticText("session-summary", Map.of(
+                "state", enabledState("auth-settings.sessions.enabled"),
+                "duration", String.valueOf(plugin.getConfig().getLong("auth-settings.sessions.duration-minutes", 10L))
+        )));
+        sendDiagnosticEntry(sender, diagnosticLabel("status-system"), enabledState("status.enabled"));
+        sendDiagnosticEntry(sender, diagnosticLabel("local-users-folder"), localUsersSummary());
+        sendDiagnosticEntry(sender, diagnosticLabel("user-index"), userIndexSummary());
+        sendDiagnosticEntry(sender, diagnosticLabel("active-auth-sessions"), String.valueOf(plugin.getAuthSessionSummaries().size()));
+        sendDiagnosticEntry(sender, diagnosticLabel("waiting-auth-players"), String.valueOf(plugin.getUnauthenticatedPlayers().size()));
+        sendDiagnosticEntry(sender, diagnosticLabel("captcha-challenges"), String.valueOf(plugin.getCaptchaChallengeCount()));
+        sendDiagnosticEntry(sender, diagnosticLabel("pending-2fa-players"), String.valueOf(plugin.getPendingTwoFactorCount()));
         sendDiagnosticsFooter(sender);
     }
 
@@ -343,26 +356,26 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
         UUID uuid = status.uuid();
         Player online = uuid == null ? null : plugin.getServer().getPlayer(uuid);
         sendDiagnosticsHeader(sender, "messages.admin-diagnostics-player-title");
-        sendDiagnosticEntry(sender, "Player", status.username());
-        sendDiagnosticEntry(sender, "UUID", String.valueOf(uuid));
-        sendDiagnosticEntry(sender, "Storage", status.storage());
-        sendDiagnosticEntry(sender, "Online", plainYesNo(status.online()));
-        sendDiagnosticEntry(sender, "Authenticated", plainYesNo(status.authenticated()));
-        sendDiagnosticEntry(sender, "Waiting auth", plainYesNo(status.waitingAuth()));
-        sendDiagnosticEntry(sender, "Auth mode", uuid == null ? "-" : plugin.getAuthMode(uuid));
-        sendDiagnosticEntry(sender, "Password usable", uuid == null ? "-" : plainYesNo(plugin.isPasswordUsable(uuid)));
-        sendDiagnosticEntry(sender, "PIN set", uuid == null ? "-" : plainYesNo(plugin.getPinHash(uuid) != null));
-        sendDiagnosticEntry(sender, "Two-factor", uuid == null ? "-" : plainYesNo(plugin.hasTwoFactorEnabled(uuid)));
-        sendDiagnosticEntry(sender, "Captcha required", online == null ? "-" : plainYesNo(plugin.isCaptchaRequired(online)));
-        sendDiagnosticEntry(sender, "Wrong password attempts", String.valueOf(status.currentWrongAttempts()));
-        sendDiagnosticEntry(sender, "Wrong PIN attempts", uuid == null ? "-" : String.valueOf(plugin.getWrongPinAttempts().getOrDefault(uuid, 0)));
-        sendDiagnosticEntry(sender, "Recovery method", uuid == null ? "-" : plugin.getRecoveryMethod(uuid));
-        sendDiagnosticEntry(sender, "Security question", uuid == null ? "-" : plainYesNo(plugin.getStoredSecurityQuestion(uuid) != null));
-        sendDiagnosticEntry(sender, "Backup codes", uuid == null ? "-" : String.valueOf(plugin.getBackupCodeCount(uuid)));
-        sendDiagnosticEntry(sender, "Last login", status.lastLogin());
-        sendDiagnosticEntry(sender, "Last IP", formatIp(status.lastIp()));
-        sendDiagnosticEntry(sender, "Last world", status.lastWorld());
-        sendDiagnosticEntry(sender, "Last location", status.lastLocation());
+        sendDiagnosticEntry(sender, diagnosticLabel("player"), status.username());
+        sendDiagnosticEntry(sender, diagnosticLabel("uuid"), String.valueOf(uuid));
+        sendDiagnosticEntry(sender, diagnosticLabel("storage"), status.storage());
+        sendDiagnosticEntry(sender, diagnosticLabel("online"), plainYesNo(status.online()));
+        sendDiagnosticEntry(sender, diagnosticLabel("authenticated"), plainYesNo(status.authenticated()));
+        sendDiagnosticEntry(sender, diagnosticLabel("waiting-auth"), plainYesNo(status.waitingAuth()));
+        sendDiagnosticEntry(sender, diagnosticLabel("auth-mode"), uuid == null ? "-" : plugin.getAuthMode(uuid));
+        sendDiagnosticEntry(sender, diagnosticLabel("password-usable"), uuid == null ? "-" : plainYesNo(plugin.isPasswordUsable(uuid)));
+        sendDiagnosticEntry(sender, diagnosticLabel("pin-set"), uuid == null ? "-" : plainYesNo(plugin.getPinHash(uuid) != null));
+        sendDiagnosticEntry(sender, diagnosticLabel("two-factor"), uuid == null ? "-" : plainYesNo(plugin.hasTwoFactorEnabled(uuid)));
+        sendDiagnosticEntry(sender, diagnosticLabel("captcha-required"), online == null ? "-" : plainYesNo(plugin.isCaptchaRequired(online)));
+        sendDiagnosticEntry(sender, diagnosticLabel("wrong-password-attempts"), String.valueOf(status.currentWrongAttempts()));
+        sendDiagnosticEntry(sender, diagnosticLabel("wrong-pin-attempts"), uuid == null ? "-" : String.valueOf(plugin.getWrongPinAttempts().getOrDefault(uuid, 0)));
+        sendDiagnosticEntry(sender, diagnosticLabel("recovery-method"), uuid == null ? "-" : plugin.getRecoveryMethod(uuid));
+        sendDiagnosticEntry(sender, diagnosticLabel("security-question"), uuid == null ? "-" : plainYesNo(plugin.getStoredSecurityQuestion(uuid) != null));
+        sendDiagnosticEntry(sender, diagnosticLabel("backup-codes"), uuid == null ? "-" : String.valueOf(plugin.getBackupCodeCount(uuid)));
+        sendDiagnosticEntry(sender, diagnosticLabel("last-login"), status.lastLogin());
+        sendDiagnosticEntry(sender, diagnosticLabel("last-ip"), formatIp(status.lastIp()));
+        sendDiagnosticEntry(sender, diagnosticLabel("last-world"), status.lastWorld());
+        sendDiagnosticEntry(sender, diagnosticLabel("last-location"), status.lastLocation());
         sendDiagnosticsFooter(sender);
     }
 
@@ -405,7 +418,7 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
     private List<String> buildDiagnosticsDumpLines() {
         List<String> lines = new ArrayList<>();
         lines.add("Aethelguard Diagnostics");
-        lines.add("Generated at: " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()));
+        lines.add("Generated at: " + plugin.formatDate(new Date()));
         lines.add("");
         lines.add("[Overview]");
         lines.add("Plugin version: " + plugin.getDescription().getVersion());
@@ -440,23 +453,23 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
         List<String> warnings = new ArrayList<>();
         String theme = plugin.getConfig().getString("auth-settings.pin.gui.theme", "quartz");
         if (theme == null || !plugin.getPinGuiThemes().contains(theme.toLowerCase(Locale.ROOT))) {
-            warnings.add("Unknown PIN GUI theme: " + theme);
+            warnings.add(configWarning("unknown-pin-theme", Map.of("theme", String.valueOf(theme))));
         }
         if (plugin.getConfig().getBoolean("auth-settings.pin.enabled", false)
                 && plugin.defaultAuthMode().equals("PIN")
                 && !plugin.getConfig().getBoolean("auth-settings.pin.numeric-only", true)) {
-            warnings.add("PIN GUI works best with auth-settings.pin.numeric-only enabled.");
+            warnings.add(configWarning("pin-gui-numeric-only", Map.of()));
         }
         String tableName = plugin.getConfig().getString("database.table-name", "aethelguard_auth");
         if (tableName == null || !tableName.matches("[A-Za-z0-9_]+")) {
-            warnings.add("Database table-name contains invalid characters.");
+            warnings.add(configWarning("invalid-table-name", Map.of()));
         }
         String localFolder = plugin.getConfig().getString("storage.local-users-folder", "users");
         if (localFolder == null || localFolder.isBlank() || localFolder.contains("..") || localFolder.contains("/") || localFolder.contains("\\")) {
-            warnings.add("storage.local-users-folder is unsafe or invalid.");
+            warnings.add(configWarning("invalid-local-users-folder", Map.of()));
         }
         if (plugin.getConfig().getInt("diagnostics.max-dumps-to-keep", 10) < 1) {
-            warnings.add("diagnostics.max-dumps-to-keep should be at least 1.");
+            warnings.add(configWarning("invalid-dump-retention", Map.of()));
         }
 
         org.bukkit.configuration.ConfigurationSection sounds = plugin.getConfig().getConfigurationSection("auth-settings.sounds");
@@ -466,11 +479,35 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
                 String path = "auth-settings.sounds." + key + ".sound";
                 String soundName = plugin.getConfig().getString(path, "");
                 if (soundName != null && !soundName.isBlank() && !isValidSound(soundName)) {
-                    warnings.add("Invalid sound at " + path + ": " + soundName);
+                    warnings.add(configWarning("invalid-sound", Map.of("path", path, "sound", soundName)));
                 }
             }
         }
         return warnings;
+    }
+
+    private String diagnosticLabel(String key) {
+        return plugin.getFormattedMessageString("messages.admin-diagnostics-label-" + key, false);
+    }
+
+    private String configWarning(String key, Map<String, String> placeholders) {
+        String message = plugin.getFormattedMessageString("messages.admin-diagnostics-config-warning-" + key, false);
+        for (Map.Entry<String, String> entry : placeholders.entrySet()) {
+            message = message.replace("{" + entry.getKey() + "}", entry.getValue());
+        }
+        return message;
+    }
+
+    private String diagnosticValue(String key) {
+        return plugin.getFormattedMessageString("messages.admin-diagnostics-value-" + key, false);
+    }
+
+    private String diagnosticText(String key, Map<String, String> placeholders) {
+        String message = plugin.getFormattedMessageString("messages.admin-diagnostics-text-" + key, false);
+        for (Map.Entry<String, String> entry : placeholders.entrySet()) {
+            message = message.replace("{" + entry.getKey() + "}", entry.getValue());
+        }
+        return message;
     }
 
     private boolean isValidSound(String soundName) {
@@ -491,37 +528,40 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
 
     private String databaseHealth() {
         if (!plugin.getConfig().getBoolean("database.enabled", false)) {
-            return "disabled";
+            return diagnosticValue("disabled");
         }
         try (Connection conn = plugin.getDatabaseManager().getConnection()) {
-            return conn == null ? "not connected" : "connected";
+            return conn == null ? diagnosticValue("not-connected") : diagnosticValue("connected");
         } catch (SQLException e) {
-            return "error: " + e.getMessage();
+            return diagnosticText("error", Map.of("error", e.getMessage()));
         }
     }
 
     private String localUsersSummary() {
         File folder = plugin.getLocalUsersFolder();
         File[] users = folder.listFiles((dir, name) -> name.endsWith(".yml"));
-        return (folder.exists() ? "exists" : "missing") + ", " + (users == null ? 0 : users.length) + " user file(s)";
+        return diagnosticText("local-users-summary", Map.of(
+                "state", folder.exists() ? diagnosticValue("exists") : diagnosticValue("missing"),
+                "count", String.valueOf(users == null ? 0 : users.length)
+        ));
     }
 
     private String userIndexSummary() {
         File index = new File(plugin.getLocalUsersFolder(), plugin.getConfig().getString("status.user-index-file", "user-index.txt"));
-        return index.exists() ? "exists" : "missing";
+        return index.exists() ? diagnosticValue("exists") : diagnosticValue("missing");
     }
 
     private String enabledState(String path) {
-        return plugin.getConfig().getBoolean(path, true) ? "enabled" : "disabled";
+        return plugin.getConfig().getBoolean(path, true) ? diagnosticValue("enabled") : diagnosticValue("disabled");
     }
 
     private String plainYesNo(boolean value) {
-        return value ? "yes" : "no";
+        return value ? diagnosticValue("yes") : diagnosticValue("no");
     }
 
     private String formatIp(String ip) {
         if (!plugin.getConfig().getBoolean("diagnostics.include-player-ip", false)) {
-            return "hidden";
+            return diagnosticValue("hidden");
         }
         if (!plugin.getConfig().getBoolean("diagnostics.mask-sensitive-data", true)) {
             return ip == null || ip.isBlank() ? "-" : ip;
@@ -533,10 +573,10 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
         if (ip == null || ip.isBlank() || ip.equals("-") || ip.equalsIgnoreCase("UNKNOWN")) return "-";
         if (ip.contains(":")) {
             int split = ip.indexOf(':');
-            return split <= 0 ? "masked" : ip.substring(0, split) + ":xxxx";
+            return split <= 0 ? diagnosticValue("masked") : ip.substring(0, split) + ":xxxx";
         }
         String[] parts = ip.split("\\.");
-        if (parts.length != 4) return "masked";
+        if (parts.length != 4) return diagnosticValue("masked");
         return parts[0] + "." + parts[1] + "." + parts[2] + ".xxx";
     }
 
@@ -615,7 +655,7 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
         FileConfiguration config = YamlConfiguration.loadConfiguration(file);
         config.set("password", hash);
         config.set("password.usable", true);
-        config.set("security.last-password-change", java.time.LocalDateTime.now().toString());
+        config.set("security.last-password-change", plugin.formatDate(new Date()));
         try {
             config.save(file);
             return true;

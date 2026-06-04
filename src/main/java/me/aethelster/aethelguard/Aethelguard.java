@@ -60,7 +60,6 @@ import java.util.logging.Logger;
 
 public final class Aethelguard extends JavaPlugin {
     private static final int AUTH_LOCKOUT_KICK_CYCLES = 2;
-    private static final long AUTH_LOCKOUT_DURATION_MILLIS = 5 * 60 * 1000L;
 
     private DatabaseManager databaseManager;
     private final Map<UUID, Location> previousLocations = new HashMap<>();
@@ -529,19 +528,21 @@ public final class Aethelguard extends JavaPlugin {
 
         reconnectDatabase();
 
-        boolean tpVoid = getConfig().getBoolean("auth-settings.teleport-to-void", true);
-        for (Player onlinePlayer : getServer().getOnlinePlayers()) {
-            UUID uuid = onlinePlayer.getUniqueId();
-            unauthenticatedPlayers.add(uuid);
-            rememberPreviousLocation(onlinePlayer);
-            hideInventoryForAuth(onlinePlayer);
+        if (getConfig().getBoolean("auth-settings.reload.reauth-online-players", true)) {
+            boolean tpVoid = getConfig().getBoolean("auth-settings.teleport-to-void", true);
+            for (Player onlinePlayer : getServer().getOnlinePlayers()) {
+                UUID uuid = onlinePlayer.getUniqueId();
+                unauthenticatedPlayers.add(uuid);
+                rememberPreviousLocation(onlinePlayer);
+                hideInventoryForAuth(onlinePlayer);
 
-            if (tpVoid) {
-                Location voidLoc = getVoidLocation(onlinePlayer);
-                onlinePlayer.teleport(voidLoc);
+                if (tpVoid) {
+                    Location voidLoc = getVoidLocation(onlinePlayer);
+                    onlinePlayer.teleport(voidLoc);
+                }
+                applyAuthEffects(onlinePlayer);
+                sendMessage(onlinePlayer, "messages.plugin-reloaded-auth", true);
             }
-            applyAuthEffects(onlinePlayer);
-            sendMessage(onlinePlayer, "messages.plugin-reloaded-auth", true);
         }
 
         AuthCommand authCommand = new AuthCommand(this);
@@ -663,12 +664,12 @@ public final class Aethelguard extends JavaPlugin {
             if (copied > 0) {
                 cleanupOldReloadBackups(backupRoot);
                 logConfigInfo(
-                        "Reload oncesi " + copied + " dosya yedeklendi: " + backupFolder.getPath(),
+                        "Reload öncesi " + copied + " dosya yedeklendi: " + backupFolder.getPath(),
                         "Backed up " + copied + " file(s) before reload: " + backupFolder.getPath()
                 );
             }
         } catch (IOException e) {
-            logWarning("Reload yedegi olusturulamadi.", "Could not create reload backup.");
+            logWarning("Reload yedeği oluşturulamadı.", "Could not create reload backup.");
             e.printStackTrace();
         }
     }
@@ -724,7 +725,7 @@ public final class Aethelguard extends JavaPlugin {
     private String getSafeBackupFolderName(String path, String fallback) {
         String folderName = getConfig().getString(path, fallback);
         if (folderName == null || folderName.isBlank() || folderName.contains("..") || folderName.startsWith("/") || folderName.startsWith("\\")) {
-            logWarning("Gecersiz yedek klasoru ayari: " + path + ". Varsayilan klasor kullaniliyor.",
+            logWarning("Geçersiz yedek klasörü ayarı: " + path + ". Varsayılan klasör kullanılıyor.",
                     "Invalid backup folder config: " + path + ". Using default folder.");
             return fallback;
         }
@@ -786,7 +787,9 @@ public final class Aethelguard extends JavaPlugin {
                 Map.entry("auth-settings.apply-blindness", true),
                 Map.entry("auth-settings.clear-chat-on-auth", true),
                 Map.entry("auth-settings.log-unauthenticated-command-attempts", true),
+                Map.entry("auth-settings.reload.reauth-online-players", true),
                 Map.entry("auth-settings.temporary-lockout.enabled", true),
+                Map.entry("auth-settings.temporary-lockout.duration-minutes", 5),
                 Map.entry("auth-settings.registration.ip-limit.enabled", true),
                 Map.entry("auth-settings.registration.ip-limit.max-accounts", 2),
                 Map.entry("auth-settings.registration.ip-limit.bypass-permission", "aethelguard.bypass.iplimit"),
@@ -803,8 +806,6 @@ public final class Aethelguard extends JavaPlugin {
                 Map.entry("auth-settings.pin.enabled", false),
                 Map.entry("auth-settings.pin.default-auth-mode", "PASSWORD"),
                 Map.entry("auth-settings.pin.allow-player-auth-mode-change", true),
-                Map.entry("auth-settings.pin.min-length", 4),
-                Map.entry("auth-settings.pin.max-length", 8),
                 Map.entry("auth-settings.pin.numeric-only", true),
                 Map.entry("auth-settings.pin.allow-repeated-digits", false),
                 Map.entry("auth-settings.pin.allow-sequential-digits", false),
@@ -817,7 +818,6 @@ public final class Aethelguard extends JavaPlugin {
                 Map.entry("auth-settings.pin.gui.use-special-buttons", false),
                 Map.entry("auth-settings.pin.gui.hide-input", true),
                 Map.entry("auth-settings.pin.gui.randomize-numbers", false),
-                Map.entry("auth-settings.pin.gui.max-digits", 4),
                 Map.entry("adaptive-security.enabled", true),
                 Map.entry("adaptive-security.trusted-ip-captcha-bypass.enabled", true),
                 Map.entry("adaptive-security.trusted-ip-captcha-bypass.window-minutes", 30),
@@ -981,6 +981,7 @@ public final class Aethelguard extends JavaPlugin {
                 Map.entry("console-logging.log-auth-state-changes", true),
                 Map.entry("console-logging.log-blocked-chat-attempts", true),
                 Map.entry("storage.local-users-folder", "users"),
+                Map.entry("storage.date-format", "yyyy-MM-dd HH:mm:ss"),
                 Map.entry("status.enabled", true),
                 Map.entry("status.create-local-users-folder", true),
                 Map.entry("status.user-index-file", "user-index.txt"),
@@ -1016,6 +1017,16 @@ public final class Aethelguard extends JavaPlugin {
             getConfig().set("auth-settings.pin.gui.filler-material", null);
             changed = true;
         }
+        for (String legacyPinLengthKey : List.of(
+                "auth-settings.pin.min-length",
+                "auth-settings.pin.max-length",
+                "auth-settings.pin.gui.max-digits"
+        )) {
+            if (getConfig().isSet(legacyPinLengthKey)) {
+                getConfig().set(legacyPinLengthKey, null);
+                changed = true;
+            }
+        }
 
         List<String> allowedCommands = new ArrayList<>(getConfig().getStringList("auth-settings.commands.allowed"));
         if (!allowedCommands.contains("/giriş")) {
@@ -1046,7 +1057,7 @@ public final class Aethelguard extends JavaPlugin {
                 && !getConfig().getBoolean("auth-settings.pin.gui.use-special-buttons", false)) {
             getConfig().set("auth-settings.pin.gui.use-special-buttons", true);
             logWarning(
-                    "Netherite PIN GUI temasinda special tuslar zorunludur. use-special-buttons otomatik true yapildi.",
+                    "Netherite PIN GUI temasında special tuşlar zorunludur. use-special-buttons otomatik true yapıldı.",
                     "Special buttons are required for the netherite PIN GUI theme. use-special-buttons was forced to true."
             );
             changed = true;
@@ -1103,18 +1114,18 @@ public final class Aethelguard extends JavaPlugin {
 
             if (!movedKnownKeys.isEmpty()) {
                 logConfigInfo(
-                        "Config duzeni duzeltildi, " + movedKnownKeys.size() + " ayar dogru bolumune tasindi: " + String.join(", ", movedKnownKeys),
+                        "Config düzeni düzeltildi, " + movedKnownKeys.size() + " ayar doğru bölümüne taşındı: " + String.join(", ", movedKnownKeys),
                         "Config layout corrected, moved " + movedKnownKeys.size() + " setting(s) back to the correct section. "
                 );
             } else {
                 logConfigInfo(
-                        "Config duzeni duzeltildi, yeni ayarlar yorumlariyla dogru bolume yerlestirildi.",
+                        "Config düzeni düzeltildi, yeni ayarlar yorumlarıyla doğru bölüme yerleştirildi.",
                         "Config layout corrected, new settings were placed with comments in the correct section."
                 );
             }
             return true;
         } catch (IOException e) {
-            logWarning("Config duzeni senkronize edilemedi.", "Could not synchronize config layout.");
+            logWarning("Config düzeni senkronize edilemedi.", "Could not synchronize config layout.");
             e.printStackTrace();
             return false;
         }
@@ -1326,6 +1337,18 @@ public final class Aethelguard extends JavaPlugin {
         getServer().getConsoleSender().sendMessage(
                 consolePrefix + "§b" + getConsoleMessage(tr, en)
         );
+    }
+
+    public String formatDate(Date date) {
+        String pattern = getConfig().getString("storage.date-format", "yyyy-MM-dd HH:mm:ss");
+        if (pattern == null || pattern.isBlank()) {
+            pattern = "yyyy-MM-dd HH:mm:ss";
+        }
+        try {
+            return new SimpleDateFormat(pattern).format(date);
+        } catch (IllegalArgumentException ignored) {
+            return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(date);
+        }
     }
 
     private String getConsoleMessage(String tr, String en) {
@@ -1541,7 +1564,7 @@ public final class Aethelguard extends JavaPlugin {
 
     public void updateAccountSnapshot(Player player, boolean incrementLoginCount) {
         String uuid = player.getUniqueId().toString();
-        String now = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
+        String now = formatDate(new Date());
         String ipAddress = player.getAddress() == null
                 ? "UNKNOWN"
                 : player.getAddress().getAddress().getHostAddress();
@@ -1783,7 +1806,7 @@ public final class Aethelguard extends JavaPlugin {
             extraCaptchaPlayers.put(player.getUniqueId(), true);
             if (getConfig().getBoolean("console-logging.log-auth-state-changes", true)) {
                 logInfo(
-                        player.getName() + " supheli IP nedeniyle ekstra captcha alacak.",
+                        player.getName() + " şüpheli IP nedeniyle ekstra captcha alacak.",
                         player.getName() + " will receive extra captcha due to suspicious IP."
                 );
             }
@@ -1995,7 +2018,7 @@ public final class Aethelguard extends JavaPlugin {
 
             if (getConfig().getBoolean("adaptive-security.suspicious-ip-extra-captcha.vpn-check.log-results", true)) {
                 logInfo(
-                        playerName + " icin VPN kontrolu: " + result.reason(),
+                        playerName + " için VPN kontrolü: " + result.reason(),
                         "VPN check for " + playerName + ": " + result.reason()
                 );
             }
@@ -2647,8 +2670,8 @@ public final class Aethelguard extends JavaPlugin {
         }
 
         String safePin = pin == null ? "" : pin;
-        int minLength = Math.max(1, getConfig().getInt("auth-settings.pin.min-length", 4));
-        int maxLength = Math.max(minLength, getConfig().getInt("auth-settings.pin.max-length", 8));
+        int minLength = 4;
+        int maxLength = 4;
 
         if (safePin.length() < minLength) {
             return PinPolicyResult.error("messages.pin-too-short", Map.of("min", String.valueOf(minLength)));
@@ -2906,7 +2929,8 @@ public final class Aethelguard extends JavaPlugin {
         long currentStep = System.currentTimeMillis() / 1000L / 30L;
         int window = Math.max(0, getConfig().getInt("auth-settings.two-factor.code-window", 1));
         for (long step = currentStep - window; step <= currentStep + window; step++) {
-            if (generateTotp(secret, step).equals(code)) return true;
+            String generated = generateTotp(secret, step);
+            if (generated != null && generated.equals(code)) return true;
         }
         return false;
     }
@@ -2931,7 +2955,7 @@ public final class Aethelguard extends JavaPlugin {
                     | (hash[offset + 3] & 0xFF);
             return String.format(Locale.US, "%06d", binary % 1_000_000);
         } catch (Exception ignored) {
-            return "000000";
+            return null;
         }
     }
 
@@ -3114,12 +3138,11 @@ public final class Aethelguard extends JavaPlugin {
         removeExpiredAuthSessions();
 
         Map<UUID, String[]> summaries = new LinkedHashMap<>();
-        SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
         for (Map.Entry<UUID, AuthSession> entry : authSessions.entrySet()) {
             AuthSession session = entry.getValue();
             summaries.put(entry.getKey(), new String[]{
                     session.ipAddress(),
-                    format.format(new Date(session.expiresAt()))
+                    formatDate(new Date(session.expiresAt()))
             });
         }
         return summaries;
@@ -3370,7 +3393,7 @@ public final class Aethelguard extends JavaPlugin {
 
         int cycles = authFailureKickCycles.getOrDefault(uuid, 0) + 1;
         if (cycles >= AUTH_LOCKOUT_KICK_CYCLES) {
-            temporaryAuthLockouts.put(uuid, System.currentTimeMillis() + AUTH_LOCKOUT_DURATION_MILLIS);
+            temporaryAuthLockouts.put(uuid, System.currentTimeMillis() + getTemporaryAuthLockoutDurationMillis());
             authFailureKickCycles.put(uuid, AUTH_LOCKOUT_KICK_CYCLES);
             return true;
         }
@@ -3382,6 +3405,11 @@ public final class Aethelguard extends JavaPlugin {
     public void clearTemporaryAuthLockout(UUID uuid) {
         temporaryAuthLockouts.remove(uuid);
         authFailureKickCycles.remove(uuid);
+    }
+
+    private long getTemporaryAuthLockoutDurationMillis() {
+        long minutes = Math.max(1L, getConfig().getLong("auth-settings.temporary-lockout.duration-minutes", 5L));
+        return minutes * 60L * 1000L;
     }
 
     public void kickTemporaryAuthLocked(Player player, String messagePath) {

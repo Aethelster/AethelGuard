@@ -25,7 +25,8 @@ Bu dev sürümler yeni özellikleri erkenden denemek isteyen adminler içindir. 
 Kısa özet:
 
 - ✅ **Canlı sunucu için:** `v0.3-sentinel`
-- 🧪 **Yeni özellikleri erken test etmek için:** `v0.3.x-dev` ve `v0.4-dev`
+- 🧪 **Güncel test build:** `v0.4-dev`
+- 🧪 **Önceki pre-release buildler:** `v0.3.x-dev`
 - 🚧 **Final ücretsiz yol haritası:** `v0.4-sentinel`
 
 ---

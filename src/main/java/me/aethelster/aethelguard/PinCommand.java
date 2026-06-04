@@ -14,7 +14,6 @@ import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Map;
 import java.util.UUID;
@@ -87,15 +86,16 @@ public class PinCommand implements CommandExecutor {
             String pinHash = plugin.getPinHash(uuid);
             if (pinHash == null || pinHash.isBlank()) {
                 plugin.getServer().getScheduler().runTask(plugin, () ->
-                        plugin.sendMessage(player, "messages.pin-not-set", true)
+                        sendIfOnline(player, "messages.pin-not-set")
                 );
                 return;
             }
 
             if (BCrypt.checkpw(pin, pinHash)) {
-                plugin.getUnauthenticatedPlayers().remove(uuid);
-                plugin.getWrongPinAttempts().remove(uuid);
                 plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    if (!player.isOnline()) return;
+                    plugin.getUnauthenticatedPlayers().remove(uuid);
+                    plugin.getWrongPinAttempts().remove(uuid);
                     plugin.closePinGui(player);
                     plugin.playConfiguredSound(player, fromGui ? "auth-settings.sounds.pin-gui-success" : "auth-settings.sounds.login-success");
                     plugin.completeLogin(player, true);
@@ -106,7 +106,11 @@ public class PinCommand implements CommandExecutor {
                 return;
             }
 
-            handleWrongPin(player);
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                if (player.isOnline()) {
+                    handleWrongPin(player);
+                }
+            });
         });
     }
 
@@ -141,16 +145,21 @@ public class PinCommand implements CommandExecutor {
 
     public void submitSetPin(Player player, String pin, boolean fromGui) {
         UUID uuid = player.getUniqueId();
+        String playerName = player.getName();
+        String ipAddress = player.getAddress() != null ? player.getAddress().getAddress().getHostAddress() : "UNKNOWN";
+        Location registrationLocation = player.getLocation().clone();
+        boolean bypassIpLimit = hasIpLimitBypass(player);
+        boolean authenticatedAtSubmit = plugin.isAuthenticated(player);
 
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             if (!plugin.isAccountRegistered(uuid)) {
-                registerWithPin(player, pin, fromGui);
+                registerWithPin(player, playerName, uuid, registrationLocation, ipAddress, bypassIpLimit, pin, fromGui);
                 return;
             }
 
-            if (!plugin.isAuthenticated(player)) {
+            if (!authenticatedAtSubmit) {
                 plugin.getServer().getScheduler().runTask(plugin, () ->
-                        plugin.sendMessage(player, "messages.setpin-auth-required", true)
+                        sendIfOnline(player, "messages.setpin-auth-required")
                 );
                 return;
             }
@@ -158,18 +167,18 @@ public class PinCommand implements CommandExecutor {
             String existingHash = plugin.getPinHash(uuid);
             if (existingHash != null && !existingHash.isBlank()) {
                 plugin.getServer().getScheduler().runTask(plugin, () ->
-                        plugin.sendMessage(player, "messages.pin-already-set", true)
+                        sendIfOnline(player, "messages.pin-already-set")
                 );
                 return;
             }
 
             if (plugin.updateAccountPin(uuid, BCrypt.hashpw(pin, BCrypt.gensalt()))) {
                 plugin.getServer().getScheduler().runTask(plugin, () ->
-                        plugin.sendMessage(player, "messages.pin-created", true)
+                        sendIfOnline(player, "messages.pin-created")
                 );
             } else {
                 plugin.getServer().getScheduler().runTask(plugin, () ->
-                        plugin.sendMessage(player, "messages.pin-error", true)
+                        sendIfOnline(player, "messages.pin-error")
                 );
             }
         });
@@ -207,17 +216,17 @@ public class PinCommand implements CommandExecutor {
             }
             if (!BCrypt.checkpw(args[0], pinHash)) {
                 plugin.getServer().getScheduler().runTask(plugin, () ->
-                        plugin.sendMessage(player, "messages.pin-invalid", true)
+                        sendIfOnline(player, "messages.pin-invalid")
                 );
                 return;
             }
             if (plugin.updateAccountPin(uuid, BCrypt.hashpw(args[1], BCrypt.gensalt()))) {
                 plugin.getServer().getScheduler().runTask(plugin, () ->
-                        plugin.sendMessage(player, "messages.pin-changed", true)
+                        sendIfOnline(player, "messages.pin-changed")
                 );
             } else {
                 plugin.getServer().getScheduler().runTask(plugin, () ->
-                        plugin.sendMessage(player, "messages.pin-error", true)
+                        sendIfOnline(player, "messages.pin-error")
                 );
             }
         });
@@ -267,13 +276,12 @@ public class PinCommand implements CommandExecutor {
         return true;
     }
 
-    private void registerWithPin(Player player, String pin, boolean fromGui) {
-        String ipAddress = player.getAddress() != null ? player.getAddress().getAddress().getHostAddress() : "UNKNOWN";
+    private void registerWithPin(Player player, String playerName, UUID playerUuid, Location location,
+                                 String ipAddress, boolean bypassIpLimit, String pin, boolean fromGui) {
         int maxAccounts = plugin.getConfig().getInt("auth-settings.registration.ip-limit.max-accounts", 2);
-        if (isIpRegistrationLimitReached(player, ipAddress, maxAccounts)) {
+        if (isIpRegistrationLimitReached(ipAddress, maxAccounts, bypassIpLimit)) {
             plugin.getServer().getScheduler().runTask(plugin, () ->
-                    plugin.sendMessage(player, "messages.ip-registration-limit-reached", true,
-                            Map.of("limit", String.valueOf(maxAccounts)))
+                    sendIfOnline(player, "messages.ip-registration-limit-reached", Map.of("limit", String.valueOf(maxAccounts)))
             );
             return;
         }
@@ -281,17 +289,18 @@ public class PinCommand implements CommandExecutor {
         String pinHash = BCrypt.hashpw(pin, BCrypt.gensalt());
         String disabledPasswordHash = BCrypt.hashpw(UUID.randomUUID().toString(), BCrypt.gensalt());
         boolean registered = plugin.getConfig().getBoolean("database.enabled", false)
-                ? registerDatabasePinPlayer(player, disabledPasswordHash, pinHash, ipAddress)
-                : registerLocalPinPlayer(player, disabledPasswordHash, pinHash, ipAddress);
+                ? registerDatabasePinPlayer(playerUuid, playerName, location, disabledPasswordHash, pinHash, ipAddress)
+                : registerLocalPinPlayer(playerUuid, playerName, location, disabledPasswordHash, pinHash, ipAddress);
 
         if (!registered) {
             plugin.getServer().getScheduler().runTask(plugin, () ->
-                    plugin.sendMessage(player, "messages.register-error", true)
+                    sendIfOnline(player, "messages.register-error")
             );
             return;
         }
 
         plugin.getServer().getScheduler().runTask(plugin, () -> {
+            if (!player.isOnline()) return;
             plugin.getUnauthenticatedPlayers().remove(player.getUniqueId());
             plugin.closePinGui(player);
             plugin.playConfiguredSound(player, fromGui ? "auth-settings.sounds.pin-gui-success" : "auth-settings.sounds.register-success");
@@ -304,16 +313,15 @@ public class PinCommand implements CommandExecutor {
         });
     }
 
-    private boolean registerLocalPinPlayer(Player player, String passwordHash, String pinHash, String ipAddress) {
-        String uuid = player.getUniqueId().toString();
+    private boolean registerLocalPinPlayer(UUID playerUuid, String playerName, Location location, String passwordHash, String pinHash, String ipAddress) {
+        String uuid = playerUuid.toString();
         String now = currentDate();
-        Location location = player.getLocation();
         File userFile = new File(plugin.getLocalUsersFolder(), uuid + ".yml");
         userFile.getParentFile().mkdirs();
 
         FileConfiguration config = YamlConfiguration.loadConfiguration(userFile);
         config.set("uuid", uuid);
-        config.set("username", player.getName());
+        config.set("username", playerName);
         config.set("auth-mode", "PIN");
         config.set("password", passwordHash);
         config.set("password.usable", false);
@@ -346,8 +354,7 @@ public class PinCommand implements CommandExecutor {
         }
     }
 
-    private boolean registerDatabasePinPlayer(Player player, String passwordHash, String pinHash, String ipAddress) {
-        Location location = player.getLocation();
+    private boolean registerDatabasePinPlayer(UUID playerUuid, String playerName, Location location, String passwordHash, String pinHash, String ipAddress) {
         try (Connection conn = plugin.getDatabaseManager().getConnection()) {
             if (conn == null) return false;
             try (PreparedStatement ps = conn.prepareStatement(
@@ -355,8 +362,8 @@ public class PinCommand implements CommandExecutor {
                             " (uuid, username, password, password_usable, auth_mode, pin_hash, registration_ip, last_ip, last_world, last_x, last_y, last_z, login_count) " +
                             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);"
             )) {
-                ps.setString(1, player.getUniqueId().toString());
-                ps.setString(2, player.getName());
+                ps.setString(1, playerUuid.toString());
+                ps.setString(2, playerName);
                 ps.setString(3, passwordHash);
                 ps.setBoolean(4, false);
                 ps.setString(5, "PIN");
@@ -448,12 +455,16 @@ public class PinCommand implements CommandExecutor {
         }
     }
 
-    private boolean isIpRegistrationLimitReached(Player player, String ipAddress, int maxAccounts) {
+    private boolean isIpRegistrationLimitReached(String ipAddress, int maxAccounts, boolean bypassIpLimit) {
         if (!plugin.getConfig().getBoolean("auth-settings.registration.ip-limit.enabled", true)) return false;
         if (maxAccounts <= 0) return false;
-        String bypassPermission = plugin.getConfig().getString("auth-settings.registration.ip-limit.bypass-permission", "aethelguard.bypass.iplimit");
-        if (bypassPermission != null && !bypassPermission.isBlank() && player.hasPermission(bypassPermission)) return false;
+        if (bypassIpLimit) return false;
         return plugin.countAccountsByIp(ipAddress) >= maxAccounts;
+    }
+
+    private boolean hasIpLimitBypass(Player player) {
+        String bypassPermission = plugin.getConfig().getString("auth-settings.registration.ip-limit.bypass-permission", "aethelguard.bypass.iplimit");
+        return bypassPermission != null && !bypassPermission.isBlank() && player.hasPermission(bypassPermission);
     }
 
     private void logPinRegister(Player player) {
@@ -472,7 +483,19 @@ public class PinCommand implements CommandExecutor {
         );
     }
 
+    private void sendIfOnline(Player player, String messagePath) {
+        if (player.isOnline()) {
+            plugin.sendMessage(player, messagePath, true);
+        }
+    }
+
+    private void sendIfOnline(Player player, String messagePath, Map<String, String> placeholders) {
+        if (player.isOnline()) {
+            plugin.sendMessage(player, messagePath, true, placeholders);
+        }
+    }
+
     private String currentDate() {
-        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
+        return plugin.formatDate(new Date());
     }
 }

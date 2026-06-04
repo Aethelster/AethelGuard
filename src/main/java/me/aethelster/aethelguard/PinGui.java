@@ -153,7 +153,7 @@ public class PinGui implements Listener {
             inventory.setItem(entry.getValue(), headItem(theme.digits().get(entry.getKey()), "messages.pin-gui-digit", Map.of("digit", String.valueOf(entry.getKey()))));
         }
 
-        int maxLength = Math.min(DISPLAY_SLOTS.length, Math.max(1, plugin.getConfig().getInt("auth-settings.pin.gui.max-digits", 4)));
+        int maxLength = DISPLAY_SLOTS.length;
         for (int i = 0; i < DISPLAY_SLOTS.length; i++) {
             boolean filled = i < session.input().length();
             if (session.hasError()) {
@@ -187,7 +187,7 @@ public class PinGui implements Listener {
     }
 
     private int minPinLength() {
-        return Math.max(1, plugin.getConfig().getInt("auth-settings.pin.min-length", 4));
+        return DISPLAY_SLOTS.length;
     }
 
     private Map<Integer, Integer> createDigitSlots() {
@@ -395,7 +395,7 @@ public class PinGui implements Listener {
     }
 
     private void appendDigit(Player player, Inventory inventory, Session session, int digit) {
-        int maxLength = Math.min(DISPLAY_SLOTS.length, Math.max(1, plugin.getConfig().getInt("auth-settings.pin.gui.max-digits", 4)));
+        int maxLength = DISPLAY_SLOTS.length;
         if (session.isSubmitting() || session.hasError()) return;
         if (session.input().length() >= maxLength) return;
         session.append(digit);
@@ -412,11 +412,13 @@ public class PinGui implements Listener {
         }
 
         String pin = session.input();
-        Aethelguard.PinPolicyResult policy = plugin.validatePinPolicy(pin);
-        if (!policy.valid()) {
-            plugin.sendMessage(player, policy.messagePath(), true, policy.placeholders());
-            plugin.playConfiguredSound(player, "auth-settings.sounds.pin-gui-disabled-confirm");
-            return;
+        if (session.mode() != Mode.LOGIN) {
+            Aethelguard.PinPolicyResult policy = plugin.validatePinPolicy(pin);
+            if (!policy.valid()) {
+                plugin.sendMessage(player, policy.messagePath(), true, policy.placeholders());
+                plugin.playConfiguredSound(player, "auth-settings.sounds.pin-gui-disabled-confirm");
+                return;
+            }
         }
 
         if (session.mode() == Mode.PREVIEW) {

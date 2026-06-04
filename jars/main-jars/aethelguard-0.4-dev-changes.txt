@@ -1,0 +1,28 @@
+Changes from 0.3.9-dev to 0.4-dev
+
+Warning:
+- This development build has not been tested in-game yet. Please test it on a backup/test server before using it on a live server.
+
+- Created the 0.4-dev test build for the final free-release testing cycle.
+- No new gameplay/security feature was added after 0.3.9-dev.
+- This build packages the current 0.4 feature line for broader testing.
+- Includes the full dev-line work from 0.3.1-dev through 0.3.9-dev:
+  - PIN login foundations
+  - PIN GUI and theme polish
+  - admin diagnostics
+  - reload backups
+  - temporary auth lockout
+  - improved account activity/status output
+  - PIN GUI theme preview polish
+  - admin tab completion polish
+  - README/messages/config cleanup
+- Updated README release channel summary to show v0.4-dev as the current test build.
+- Hardened the authentication async flow so Bukkit player actions and live auth state changes are handled on the main server thread.
+- Added online-player guards to async login/register/PIN/password-change callbacks so a player disconnecting mid-check no longer continues the success/error flow.
+- Fixed PIN login through the GUI so existing correct PINs are checked by hash instead of being rejected by changed PIN policy rules.
+- Locked the free-version PIN system to exactly 4 digits, matching the hardcoded keypad layout.
+- Removed the old configurable PIN length keys from the live config layout; old configs will be cleaned by the config sync system.
+- Fixed a rare 2FA edge case where a corrupted TOTP secret could fall back to a generated 000000 code.
+- Performed one more pre-test async cleanup pass for login 2FA routing, PIN setup auth-state reads, and player password-change callbacks.
+- v0.4-dev is still a pre-release and should not be treated as the final stable version.
+- v0.4-sentinel will be the final free release after in-game testing and feedback.
