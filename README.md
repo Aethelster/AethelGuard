@@ -12,6 +12,24 @@ Amaç basit: **auth güçlü olsun, console temiz kalsın, admin her şeyi confi
 
 ---
 
+## 📌 Güncel Sürüm Durumu
+
+Şu anda Aethelguard için önerilen ana sürüm: **`v0.3-sentinel`** ✅
+
+GitHub Releases kısmında **Latest / stable** olarak tutulması gereken sürüm budur. Normal sunucu sahipleri, canlı sunucularında bu sürümü kullanmalıdır. `v0.3-sentinel`; Adaptive Security + Recovery Update’in tamamlanmış, ana yayın olarak paylaşılmış sürümüdür.
+
+`v0.3.1-dev`, `v0.3.2-dev`, `v0.3.3-dev`, `v0.3.4-dev`, `v0.3.5-dev` ve bundan sonra gelecek `dev` etiketli sürümler ise **pre-release / test build** olarak düşünülmelidir. 🧪
+
+Bu dev sürümler yeni özellikleri erkenden denemek isteyen adminler içindir. İçlerinde PIN sistemi, PIN GUI polish, diagnostics, reload backup gibi yeni özellikler bulunabilir; fakat bu sürümler canlı sunucuya koymadan önce mutlaka yedek/test sunucusunda denenmelidir.
+
+Kısa özet:
+
+- ✅ **Canlı sunucu için:** `v0.3-sentinel`
+- 🧪 **Yeni özellikleri erken test etmek için:** `v0.3.x-dev`
+- 🚧 **Final ücretsiz yol haritası:** `v0.4-sentinel`
+
+---
+
 ## 🚀 Öne Çıkanlar
 
 - 🔐 `/register`, `/login`, `/changepassword` hesap sistemi
@@ -47,6 +65,8 @@ Amaç basit: **auth güçlü olsun, console temiz kalsın, admin her şeyi confi
 4. 🌍 Mesajları değiştirmek istersen `plugins/Aethelguard/messages/` klasörünü kullan.
 5. 🧠 Güvenlik sorularını değiştirmek istersen `plugins/Aethelguard/security_questions/` klasörünü düzenle.
 6. 🔁 Database veya temel auth ayarlarını değiştirdiysen sunucuyu yeniden başlat.
+
+> 💡 GitHub Releases üzerinden indiriyorsan **Latest** etiketi olan `v0.3-sentinel` sürümünü tercih et. `dev` yazan sürümler pre-release olduğu için daha çok test etmek, geri bildirim vermek veya yeni özellikleri erkenden görmek isteyenler içindir.
 
 Çoğu ayar reload ile yenilenebilir:
 
@@ -550,6 +570,29 @@ Bu isim, 0.3-sentinel’in ana odağını özetler: Oyuncunun giriş riskini dah
 - 0.3’te Türkçe console için `native` ve `ascii` text mode daha sağlam hale geldi.
 - Messages EN/TR keyleri eşit tutuldu.
 - Yeni tüm oyuncu mesajları messages dosyalarına bağlandı.
+
+---
+
+## 🧪 Pre-release Dev Sürümleri
+
+`v0.3-sentinel`, şu anki ana ve önerilen sürümdür. Bunun üstüne çıkan `v0.3.x-dev` sürümler, Aethelguard’ın bir sonraki büyük ücretsiz sürümü olan `v0.4-sentinel` için hazırlanan test yapılarıdır.
+
+Bu sürümlerin amacı, yeni özellikleri küçük parçalar halinde denemek ve geri bildirim toplamaktır. Yani her dev build bir şeyleri ileri taşır; fakat “her sunucuya direkt kur, unut” mantığında değildir. Özellikle canlı sunucularda kullanmadan önce yedek almak ve test ortamında denemek önerilir. 🔐
+
+Dev sürümlerde eklenen/eklenecek başlıklar:
+
+- 🔢 `v0.3.1-dev` / `v0.3.2-dev`: PIN login temelleri ve komut akışı
+- 🎛️ `v0.3.3-dev`: PIN GUI polish, tema sistemi, gizli PIN gösterimi, random numpad ve ses geri bildirimleri
+- 🩺 `v0.3.4-dev`: Admin diagnostics, config kontrol raporları, player/session inceleme ve dump dosyaları
+- 💾 `v0.3.5-dev`: Reload öncesi config/messages/security question backup sistemi
+- 🔒 `v0.3.6-dev`: Geçici auth lockout sistemi
+- 📊 `v0.3.7-dev`: Activity/status polish
+- 🎨 `v0.3.8-dev`: Theme preview ve tab completion polish
+- 🧹 `v0.3.9-dev`: Config, messages ve README final cleanup
+- 🧪 `v0.4-dev`: Final test build
+- ✅ `v0.4-sentinel`: Final ücretsiz sürüm
+
+Kısacası: **`v0.3-sentinel` güvenli ana sürüm, `v0.3.x-dev` ise 0.4’e giden test laboratuvarı.** ✨
 
 ---
 
