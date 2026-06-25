@@ -1,109 +1,109 @@
-# 🛡️ Aethelguard
+# 🛡️ AethelGuard
 
-**Aethelguard**, Paper tabanlı Minecraft sunucuları için geliştirilen, temiz loglara ve yüksek özelleştirme gücüne odaklanan modern bir auth ve hesap güvenliği eklentisidir.
+**AethelGuard** is a modern authentication and account-security plugin for Paper-based Minecraft servers, focused on clean logs and strong customization.
 
-Oyuncular sunucuya girdiğinde doğrulama tamamlanana kadar kontrollü bir auth alanında tutulur. Captcha, login/register, PIN, 2FA veya recovery adımı bitmeden oyuncu dünyaya, chate, envanterine ve riskli komutlara erişemez. Auth tamamlandığında envanteri geri gelir, bossbar temizlenir ve oyuncu güvenli konumuna döner.
+When players join the server, they are kept inside a controlled auth area until verification is complete. Before the captcha, login/register, PIN, 2FA or recovery step is finished, players cannot access the world, chat, inventory or risky commands. When auth is completed, their inventory is restored, the bossbar is cleared and the player returns to a safe location.
 
-> Amaç basit: güçlü auth, temiz console, anlaşılır config ve adminin her şeyi rahatça yönetebildiği bir güvenlik sistemi.
+> The goal is simple: strong auth, clean console output, understandable config and a security system that admins can manage comfortably.
 
-## ✅ Güncel Sürüm
+## ✅ Current Version
 
 **Latest stable:** `v0.4.2-sentinel`
 
-`v0.4.2-sentinel`, Aethelguard’ın güncel ücretsiz sürümüdür. `v0.4.1-sentinel` üstüne monitor-green PIN GUI digit 5 texture düzeltmesi eklenmiştir.
+`v0.4.2-sentinel` is the final free release of Aethelguard. It builds on `v0.3-sentinel` with the PIN system, PIN GUI, diagnostics, stronger timeout/reload flow, required security questions and many polish/fix improvements.
 
-> ⚠️ **Önemli uyarı:** `v0.4.2-sentinel` öncesindeki sürümler artık önerilmez. Eski `dev` buildlerde ve önceki sentinel sürümlerde auth akışı, timeout, local YAML password kaydı, 2FA QR linkleri, PIN GUI textureları veya config/messages tarafında düzeltilmiş hatalar bulunabilir. Yeni kurulumlarda ve canlı sunucularda doğrudan **`v0.4.2-sentinel`** kullanmanız tavsiye edilir.
+> ⚠️ **Important warning:** Versions before `v0.4-sentinel` are no longer recommended. Older `dev` builds and previous sentinel releases may contain fixed issues in the auth flow, timeout handling, local YAML password storage, 2FA QR links or config/messages. For new installs and live servers, it is recommended to use **`v0.4-sentinel`** directly.
 
-## ✨ Öne Çıkan Özellikler
+## ✨ Highlight Features
 
 - 🔐 Password auth: `/register`, `/login`, `/changepassword`
 - 🔢 PIN auth: `/pin`, `/setpin`, `/changepin`, `/authmode`
-- 🧩 Hardcoded PIN GUI keypad ve tema sistemi
+- 🧩 Hardcoded PIN GUI keypad and theme system
 - 🛡️ Captcha: `MAP`, `TEXT`, `NUMERIC`, `ALPHANUMERIC`, `MATH`
-- 🗺️ Harita captcha, slot kilidi ve auth sırasında envanter koruması
-- 📱 TOTP 2FA: Google Authenticator, Microsoft Authenticator, Authy uyumlu
-- 🔗 2FA QR kurulumu için tıklanabilir QR bağlantısı
-- 🧠 Adaptive security: güvenilir IP captcha bypass, şüpheli IP ekstra captcha
-- 🌐 VPN/proxy kontrolü ve manuel şüpheli IP listesi
-- ❓ İlk kayıt sonrası güvenlik sorusu zorunluluğu
-- 🧾 Security question ve backup code ile account recovery
+- 🗺️ Map captcha, slot lock and inventory protection during auth
+- 📱 TOTP 2FA: compatible with Google Authenticator, Microsoft Authenticator and Authy
+- 🔗 Clickable QR link for 2FA setup
+- 🧠 Adaptive security: trusted-IP captcha bypass and suspicious-IP extra captcha
+- 🌐 VPN/proxy checks and manual suspicious IP list
+- ❓ Required security question after first registration
+- 🧾 Account recovery with security questions and backup codes
 - 🔁 Session auto-login
-- ⏳ Temporary auth lockout ve attempt yönetimi
-- 🔑 Şifre politikası: uzunluk, kullanıcı adı engeli, yasak kelime listesi, Türkçe karakter, noktalama ve özel karakter ayarları
-- 💾 Local YAML veya MySQL depolama
+- ⏳ Temporary auth lockout and attempt management
+- 🔑 Password policy: length, username blocking, blocked word list, Turkish characters, punctuation and special-character settings
+- 💾 Local YAML or MySQL storage
 - 📊 `/aethelguard status`, `ipinfo`, `accounts`, `sessions`
-- 🧪 `/aethelguard diagnostics` ve diagnostic dump desteği
-- 🧹 Vanilla join/quit/connection/command loglarını susturma
-- 🖥️ Console dili: `en`, `tr native`, `tr ascii`
-- 🌍 `messages_<code>.yml` dil sistemi
-- ⚙️ Eksik config keylerini otomatik ekleyen ve layout düzelten config sync sistemi
-- 💬 Auth olmamış oyuncuların chat görmesini/konuşmasını engelleme
-- 📌 Auth aşamasına göre bossbar yönlendirmeleri
+- 🧪 `/aethelguard diagnostics` and diagnostic dump support
+- 🧹 Suppression for vanilla join/quit/connection/command logs
+- 🖥️ Console language: `en`, `tr native`, `tr ascii`
+- 🌍 `messages_<code>.yml` language system
+- ⚙️ Config sync system that automatically adds missing config keys and fixes layout
+- 💬 Blocking unauthenticated players from seeing/sending chat
+- 📌 Bossbar guidance based on the current auth step
 
-## 📦 Kurulum
+## 📦 Installation
 
-1. GitHub Releases üzerinden `aethelguard-0.4.2-sentinel.jar` dosyasını indir.
-2. JAR dosyasını sunucunun `plugins` klasörüne at.
-3. Sunucuyu başlat.
-4. `plugins/Aethelguard/config.yml` dosyasını düzenle.
-5. Mesajları değiştirmek için `plugins/Aethelguard/messages/` klasörünü kullan.
-6. Güvenlik sorularını değiştirmek için `plugins/Aethelguard/security_questions/` klasörünü düzenle.
+1. Download `aethelguard.jar` from GitHub Releases or Modrinth.
+2. Put the JAR file into your server's `plugins` folder.
+3. Start the server.
+4. Edit `plugins/AethelGuard/config.yml`.
+5. To change messages, use the `plugins/AethelGuard/messages/` folder.
+6. To change security questions, edit the `plugins/AethelGuard/security_questions/` folder.
 
-Çoğu ayar reload ile yenilenebilir:
+Most settings can be reloaded:
 
 ```text
 /aethelguard reload
 ```
 
-Database ve bazı temel auth ayarlarında sunucu restartı daha sağlıklı olabilir.
+For database settings and some core auth settings, restarting the server may be safer.
 
-## 🎮 Oyuncu Komutları
+## 🎮 Player Commands
 
-| Komut | Açıklama |
+| Command | Description |
 | --- | --- |
-| `/register <şifre> <şifre tekrar>` | Password ile hesap oluşturur. |
-| `/login <şifre>` | Password ile giriş yapar. |
-| `/captcha <kod>` | Captcha doğrulamasını tamamlar. |
-| `/pin <pin>` | PIN ile giriş yapar. |
-| `/setpin <pin> <pin>` | İlk PIN kaydını oluşturur. |
-| `/changepin <eskiPin> <yeniPin> <yeniPinTekrar>` | PIN değiştirir. |
-| `/authmode <password|pin>` | Hesabın giriş yöntemini değiştirir. |
-| `/changepassword <eskiŞifre> <yeniŞifre> <yeniŞifreTekrar>` | Oyuncunun kendi şifresini değiştirir. |
-| `/twofactor <kod>` | Login sırasında 2FA kodunu doğrular. |
-| `/twofactor setup` | Authenticator kurulumunu başlatır. |
-| `/twofactor confirm <kod>` | 2FA kurulumunu tamamlar. |
-| `/twofactor disable <kod>` | 2FA korumasını kapatır. |
-| `/securityquestion setup` | Güvenlik sorusu oluşturur. |
-| `/securityquestion answer <cevap>` | Güvenlik sorusu cevabını kaydeder. |
-| `/backupcodes generate` | Recovery için tek kullanımlık backup code üretir. |
-| `/recoverymethod question` | Recovery yöntemini güvenlik sorusu yapar. |
-| `/recoverymethod backup-code` | Recovery yöntemini backup code yapar. |
-| `/recover question <cevap> <yeniŞifre>` | Güvenlik sorusuyla şifre sıfırlar. |
-| `/recover code <kod> <yeniŞifre>` | Backup code ile şifre sıfırlar. |
+| `/register <password> <password again>` | Creates an account with password auth. |
+| `/login <password>` | Logs in with password auth. |
+| `/captcha <code>` | Completes captcha verification. |
+| `/pin <pin>` | Logs in with PIN. |
+| `/setpin <pin> <pin>` | Creates the first PIN. |
+| `/changepin <oldPin> <newPin> <newPinAgain>` | Changes the PIN. |
+| `/authmode <password/pin>` | Changes the account login method. |
+| `/changepassword <oldPassword> <newPassword> <newPasswordAgain>` | Lets the player change their own password. |
+| `/twofactor <code>` | Verifies the 2FA code during login. |
+| `/twofactor setup` | Starts authenticator setup. |
+| `/twofactor confirm <code>` | Completes 2FA setup. |
+| `/twofactor disable <code>` | Disables 2FA protection. |
+| `/securityquestion setup` | Creates a security question. |
+| `/securityquestion answer <answer>` | Saves the security-question answer. |
+| `/backupcodes generate` | Generates one-time backup codes for recovery. |
+| `/recoverymethod question` | Sets recovery method to security question. |
+| `/recoverymethod backup-code` | Sets recovery method to backup code. |
+| `/recover question <answer> <newPassword>` | Resets password with a security question. |
+| `/recover code <code> <newPassword>` | Resets password with a backup code. |
 
-## 👑 Admin Komutları
+## 👑 Admin Commands
 
-| Komut | Açıklama |
+| Command | Description |
 | --- | --- |
-| `/aethelguard reload` | Config, mesajlar ve bağlantıları yeniler. |
-| `/aethelguard status <oyuncu>` | Oyuncunun auth durumunu ve kayıt detaylarını gösterir. |
-| `/aethelguard ipinfo <oyuncu|ip>` | IP ile ilişkili hesapları ve limit bilgisini gösterir. |
-| `/aethelguard accounts <oyuncu|ip>` | Aynı IP’ye bağlı hesapları listeler. |
-| `/aethelguard sessions` | Aktif auth session listesini gösterir. |
-| `/aethelguard session <oyuncu>` | Bir oyuncunun session bilgisini gösterir. |
-| `/aethelguard clearsession <oyuncu>` | Oyuncunun session kaydını temizler. |
-| `/aethelguard clearsessions` | Tüm session kayıtlarını temizler. |
-| `/aethelguard diagnostics` | Genel sistem teşhisi gösterir. |
-| `/aethelguard diagnostics player <oyuncu>` | Oyuncu özelinde teşhis çıktısı verir. |
-| `/aethelguard diagnostics config` | Config risklerini kontrol eder. |
-| `/aethelguard diagnostics dump` | Diagnostic rapor dosyası oluşturur. |
-| `/aethelguard pingui preview [tema]` | PIN GUI temasını önizler. |
-| `/aethelguard pingui themes` | Mevcut PIN GUI temalarını listeler. |
-| `/aethelguard unregister <oyuncu>` | Oyuncunun auth kaydını siler. |
-| `/aethelguard changepassword <oyuncu> <yeniŞifre>` | Admin olarak oyuncu şifresi değiştirir. |
-| `/aethelguard unlogin <oyuncu>` | Oyuncuyu oyundan atmadan tekrar auth ekranına alır. |
+| `/aethelguard reload` | Reloads config, messages and connections. |
+| `/aethelguard status <player>` | Shows the player's auth state and account details. |
+| `/aethelguard ipinfo <player/ip>` | Shows accounts related to an IP and limit information. |
+| `/aethelguard accounts <player/ip>` | Lists accounts linked to the same IP. |
+| `/aethelguard sessions` | Shows active auth sessions. |
+| `/aethelguard session <player>` | Shows one player's session information. |
+| `/aethelguard clearsession <player>` | Clears one player's session record. |
+| `/aethelguard clearsessions` | Clears all session records. |
+| `/aethelguard diagnostics` | Shows general system diagnostics. |
+| `/aethelguard diagnostics player <player>` | Shows player-specific diagnostic output. |
+| `/aethelguard diagnostics config` | Checks config risks. |
+| `/aethelguard diagnostics dump` | Creates a diagnostic report file. |
+| `/aethelguard pingui preview [theme]` | Previews a PIN GUI theme. |
+| `/aethelguard pingui themes` | Lists available PIN GUI themes. |
+| `/aethelguard unregister <player>` | Deletes a player's auth record. |
+| `/aethelguard changepassword <player> <newPassword>` | Changes a player's password as admin. |
+| `/aethelguard unlogin <player>` | Sends an online player back to the auth screen without kicking them. |
 
-Admin aliasları:
+Admin aliases:
 
 ```text
 /ag
@@ -111,80 +111,80 @@ Admin aliasları:
 /ayarlar
 ```
 
-## ⚙️ Config ve Dil Sistemi
+## ⚙️ Config and Language System
 
-Aethelguard’ın ayarları `config.yml` üzerinden yönetilir. Dosyada kategorili açıklamalar bulunur ve yeni sürümlerde eksik keyler otomatik eklenir.
+Aethelguard settings are managed through `config.yml`. The file includes categorized comments, and missing keys are automatically added in newer versions.
 
-Öne çıkan config alanları:
+Important config areas:
 
-- `default-language`: Oyuncu mesaj dili. `messages_<code>.yml` mantığıyla yeni dil dosyası eklenebilir.
-- `console-language`: Console dili. Sadece `en` ve `tr` desteklenir.
-- `console-text-mode`: Türkçe console için `native` veya `ascii`.
-- `database`: MySQL veya local YAML depolama.
-- `auth-settings`: Captcha, PIN, 2FA, timeout, session, bossbar, sounds ve restriction ayarları.
-- `adaptive-security`: IP güveni, şüpheli IP, VPN/proxy kontrolü ve ekstra captcha.
-- `recovery`: Security question, backup code ve recovery davranışı.
-- `security-cooldowns`: Hassas komutlar için cooldown ayarları.
-- `status`: Local user snapshot ve admin status sistemi.
-- `diagnostics`: Admin diagnostic ve dump ayarları.
-- `console-logging`: Vanilla connection loglarını susturma ve auth state logları.
+- `default-language`: Player message language. New language files can be added with the `messages_<code>.yml` pattern.
+- `console-language`: Console language. Only `en` and `tr` are supported.
+- `console-text-mode`: `native` or `ascii` for Turkish console output.
+- `database`: MySQL or local YAML storage.
+- `auth-settings`: Captcha, PIN, 2FA, timeout, session, bossbar, sounds and restriction settings.
+- `adaptive-security`: IP trust, suspicious IPs, VPN/proxy checks and extra captcha.
+- `recovery`: Security questions, backup codes and recovery behavior.
+- `security-cooldowns`: Cooldown settings for sensitive commands.
+- `status`: Local user snapshot and admin status system.
+- `diagnostics`: Admin diagnostics and dump settings.
+- `console-logging`: Vanilla connection log suppression and auth state logs.
 
-## 🔐 Auth Akışı
+## 🔐 Auth Flow
 
-Oyuncu sunucuya girdiğinde:
+When a player joins the server:
 
-1. Gerekirse captcha doğrulaması ister.
-2. Hesabın moduna göre password veya PIN ister.
-3. 2FA aktifse authenticator kodu ister.
-4. İlk register sonrası güvenlik sorusu zorunluysa cevap ister.
-5. Başarılı olursa session oluşturur, inventory geri verir ve oyuncuyu güvenli konuma taşır.
+1. Captcha verification is requested if needed.
+2. Password or PIN is requested depending on the account mode.
+3. If 2FA is enabled, an authenticator code is requested.
+4. If the required first-register security question is enabled, an answer is requested.
+5. If successful, a session is created, inventory is restored and the player is moved to a safe location.
 
-2FA hesabı için default akış:
+Default flow for a 2FA account:
 
 ```text
 30s captcha + 60s 2FA code + 30s security question
 ```
 
-Normal auth akışı default olarak toplam 90 saniyelik timeout kullanır.
+The normal auth flow uses a total default timeout of 90 seconds.
 
 ## 🧩 PIN GUI
 
-`v0.4-sentinel` ile PIN sistemi artık sadece komut tabanlı değil, GUI desteklidir.
+With `v0.4-sentinel`, the PIN system is no longer command-only; it also supports a GUI.
 
-- 4 haneli sabit PIN
-- Tema desteği: quartz, forest-green, pumpkin, netherite, monitor-green, monitor-red
-- Gizli veya görünür digit gösterimi
-- Random number layout seçeneği
-- Confirm, backspace, clear ve exit tuşları
-- GUI kapatma spam koruması
-- Özel bossbar ve ses efektleri
+- Fixed 4-digit PIN
+- Theme support: quartz, forest-green, pumpkin, netherite, monitor-green, monitor-red
+- Hidden or visible digit display
+- Random number layout option
+- Confirm, backspace, clear and exit buttons
+- GUI close-spam protection
+- Dedicated bossbar and sound effects
 
-PIN GUI ücretsiz sürümde bilinçli olarak sade ve hardcoded tutulmuştur.
+The PIN GUI is intentionally kept simple and hardcoded in the free version.
 
 ## 🧠 Adaptive Security
 
-Adaptive security sistemi oyuncunun giriş davranışını değerlendirir.
+The adaptive security system evaluates player login behavior.
 
-- Aynı IP’den güvenli tekrar girişlerde captcha bypass uygulanabilir.
-- Şüpheli IP veya VPN/proxy durumunda ekstra captcha istenebilir.
-- Admin manuel şüpheli IP listesi kullanabilir.
-- Ekstra captcha normal captcha tipinden farklı seçilebilir.
+- Safe repeat logins from the same IP can bypass captcha.
+- Suspicious IPs or VPN/proxy cases can require extra captcha.
+- Admins can use a manual suspicious IP list.
+- Extra captcha can be selected differently from the normal captcha type.
 
-Bu sistem, oyuncuyu gereksiz doğrulamayla yormadan riskli girişleri daha sıkı kontrol etmek için tasarlanmıştır.
+This system is designed to reduce unnecessary verification for trusted players while checking risky logins more strictly.
 
-## 🧾 Recovery Sistemi
+## 🧾 Recovery System
 
-Oyuncular hesaplarını şu yollarla kurtarabilir:
+Players can recover their accounts through:
 
-- Güvenlik sorusu
+- Security question
 - Backup code
-- Admin şifre değiştirme
+- Admin password change
 
-İlk register sonrası güvenlik sorusu zorunluysa oyuncu soruyu cevaplamadan sunucuya alınmaz. Oyuncu bu aşamada timeout yerse, sonraki başarılı login/PIN/2FA sonrası aynı güvenlik sorusu prosedürü tekrar başlar.
+If the security question after first registration is required, the player is not allowed into the server before answering it. If the player times out during this step, the same security-question procedure starts again after their next successful login/PIN/2FA.
 
-## 🧹 Temiz Console
+## 🧹 Clean Console
 
-Aethelguard, Paper/vanilla tarafındaki şu logları isteğe bağlı susturabilir:
+Aethelguard can optionally suppress these Paper/vanilla logs:
 
 - joined the game
 - left the game
@@ -192,7 +192,7 @@ Aethelguard, Paper/vanilla tarafındaki şu logları isteğe bağlı susturabili
 - lost connection
 - issued server command
 
-Bunun yerine auth durumlarına özel daha anlamlı loglar üretir:
+Instead, it produces more meaningful logs for auth states:
 
 - login success
 - register success
@@ -202,91 +202,90 @@ Bunun yerine auth durumlarına özel daha anlamlı loglar üretir:
 - unauthenticated quit
 - authenticated quit
 
-Console dili İngilizce veya Türkçe olabilir. Türkçe console için `native` ve `ascii` modu bulunur.
+Console language can be English or Turkish. Turkish console output supports `native` and `ascii` modes.
 
-## 🆕 v0.3-sentinel Sonrası Neler Eklendi?
+## 🆕 What Was Added After v0.3-sentinel?
 
-`v0.4-sentinel`, `v0.3-sentinel` üzerine final ücretsiz paket olarak geldi.
+`v0.4-sentinel` arrived as the final free package on top of `v0.3-sentinel`.
 
-Yeni ana özellikler:
+New main features:
 
-- PIN login sistemi
-- PIN kayıt sistemi
-- PIN değiştirme
-- Password/PIN auth mode değiştirme
+- PIN login system
+- PIN registration system
+- PIN changing
+- Password/PIN auth mode switching
 - PIN GUI keypad
-- PIN GUI tema sistemi
-- PIN GUI preview komutları
-- Admin diagnostics sistemi
+- PIN GUI theme system
+- PIN GUI preview commands
+- Admin diagnostics system
 - Diagnostic dump
-- `/ipinfo` ve `/accounts`
-- Daha detaylı `/status`
-- Reload sırasında config/messages backup altyapısı
+- `/ipinfo` and `/accounts`
+- More detailed `/status`
+- Config/messages backup infrastructure during reload
 - Temporary auth lockout
-- İlk register sonrası zorunlu güvenlik sorusu
-- Chatten captcha ve güvenlik sorusu cevabı girebilme
+- Required security question after first registration
+- Chat input for captcha and security-question answers
 - 2FA QR link polish
-- 2FA özel başarı sesi
+- Dedicated 2FA success sound
 - Auth timeout polish
-- PIN GUI close spam kick
-- Captcha inventory/slot/offhand koruması
-- MAP captcha cleanup iyileştirmeleri
-- Config layout sync düzeltmeleri
-- Messages ve MiniMessage cleanup
+- PIN GUI close-spam kick
+- Captcha inventory/slot/offhand protection
+- MAP captcha cleanup improvements
+- Config layout sync fixes
+- Messages and MiniMessage cleanup
 - 0.4 final release README cleanup
 
-Önemli fixler:
+Important fixes:
 
-- Local YAML password hash artık `password.hash` altında saklanır.
-- `password.usable` artık hash değerini ezmez.
-- Eski local password hash formatı için migration desteği eklendi.
-- Captcha sonrası `/login` etkisiz kalma problemi düzeltildi.
-- Timeout görevlerinin eski deadline ile yanlış kick/log atması engellendi.
-- Kick ekranlarında MiniMessage taglerinin ham görünmesi düzeltildi.
-- URL içindeki `&` karakterlerinin renk kodu gibi bozulması engellendi.
-- Monitor-green PIN GUI digit 5 kafa texture değerindeki hatalı base64 padding düzeltildi.
+- Local YAML password hash is now stored under `password.hash`.
+- `password.usable` no longer overwrites the hash value.
+- Migration support was added for the old local password hash format.
+- Fixed `/login` becoming ineffective after captcha.
+- Prevented timeout tasks from kicking/logging with an old deadline.
+- Fixed raw MiniMessage tags appearing on kick screens.
+- Prevented `&` characters inside URLs from being corrupted like color codes.
 
-## 🧱 Depolama
+## 🧱 Storage
 
-İki depolama modu vardır:
+There are two storage modes:
 
-- **Local YAML:** Küçük/orta sunucular ve hızlı kurulum için.
-- **MySQL:** Daha kalıcı ve merkezi depolama isteyen sunucular için.
+- **Local YAML:** For small/medium servers and quick setup.
+- **MySQL:** For servers that want more persistent and centralized storage.
 
-Local modda kullanıcı dosyaları UUID bazlı tutulur. Adminlerin isim/UUID eşleştirmesini kolay görmesi için user index sistemi bulunur.
+In local mode, user files are stored by UUID. A user index system exists to help admins see name/UUID mappings more easily.
 
-## 📌 Desteklenen Platform
+## 📌 Supported Platform
 
-Aethelguard Paper API ile geliştirilmiştir.
+Aethelguard is developed with Paper API.
 
-Önerilen:
+Recommended:
 
 - Paper
 - Purpur
-- Paper tabanlı forklar
+- Paper-based forks
 
-Hedef API:
+Target API:
 
 ```text
 Minecraft / Paper API 1.21.x
 Java 21
 ```
 
-Spigot/Bukkit tarafında bazı Paper API davranışları eksik olabileceği için önerilen platform Paper veya Purpur’dur.
+Because some Paper API behavior may be missing on Spigot/Bukkit, Paper or Purpur is the recommended platform.
 
-## 📄 Lisans
+## 📄 License
 
-Bu proje `LICENSE` dosyasındaki özel lisansla paylaşılır.
+This project is shared under the custom license in the `LICENSE` file.
 
-Kısaca:
+In short:
 
-- Kullanılabilir.
-- Paylaşılabilir.
-- Kaynak koddan türev/geliştirilmiş sürüm üretilemez.
-- Lisans metni korunmalıdır.
+- It can be used.
+- It can be shared.
+- Derivative/improved versions from the source code cannot be produced.
+- The license text must be preserved.
 
-## 💬 Kapanış
+## 💬 Closing
 
-Aethelguard, ücretsiz sürümde temiz ve güçlü bir auth deneyimi sunmayı hedefler. `v0.4-sentinel`, bu ücretsiz çizginin final sürümüdür: password, PIN, captcha, 2FA, recovery, diagnostics ve adaptive security tek pakette toplanmıştır.
+Aethelguard aims to provide a clean and strong auth experience in the free version. `v0.4-sentinel` is the final release of this free line: password, PIN, captcha, 2FA, recovery, diagnostics and adaptive security are all packed together.
 
-İyi kullanımlar. ✨
+Enjoy. ✨
