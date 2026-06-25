@@ -3,6 +3,8 @@
 [![modrinth](https://cdn.jsdelivr.net/npm/@intergrav/devins-badges@3/assets/cozy/available/modrinth_vector.svg)](https://modrinth.com/plugin/aethelguard/) [![hangar](https://cdn.jsdelivr.net/npm/@intergrav/devins-badges@3/assets/cozy/available/hangar_vector.svg)](https://hangar.papermc.io/Aethelster/AethelGuard)
 [![github](https://cdn.jsdelivr.net/npm/@intergrav/devins-badges@3/assets/cozy/available/github_vector.svg)](https://github.com/Aethelster/AethelGuard)
 
+*Modrinth is still under review and therefore not yet publicly available.*
+
 **AethelGuard** is a modern authentication and account-security plugin for Paper-based Minecraft servers, focused on clean logs and strong customization.
 
 When players join the server, they are kept inside a controlled auth area until verification is complete. Before the captcha, login/register, PIN, 2FA or recovery step is finished, players cannot access the world, chat, inventory or risky commands. When auth is completed, their inventory is restored, the bossbar is cleared and the player returns to a safe location.
