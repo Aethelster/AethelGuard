@@ -1,4 +1,7 @@
 # 🛡️ AethelGuard
+[![sponsors](https://cdn.jsdelivr.net/npm/@intergrav/devins-badges@3/assets/cozy/donate/ghsponsors-singular_vector.svg)](https://github.com/sponsors/Aethelster) 
+[![modrinth](https://cdn.jsdelivr.net/npm/@intergrav/devins-badges@3/assets/cozy/available/modrinth_vector.svg)](https://modrinth.com/plugin/aethelguard/) [![hangar](https://cdn.jsdelivr.net/npm/@intergrav/devins-badges@3/assets/cozy/available/hangar_vector.svg)](https://hangar.papermc.io/Aethelster/AethelGuard)
+[![github](https://cdn.jsdelivr.net/npm/@intergrav/devins-badges@3/assets/cozy/available/github_vector.svg)](https://github.com/Aethelster/AethelGuard)
 
 **AethelGuard** is a modern authentication and account-security plugin for Paper-based Minecraft servers, focused on clean logs and strong customization.
 
