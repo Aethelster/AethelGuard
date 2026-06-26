@@ -44,12 +44,18 @@ Main-version releases document every meaningful change since the previous main-v
 
 ## Required Changelog Format
 
-Each changelog Markdown file and each GitHub release body must follow this structure:
+Each changelog Markdown file and each GitHub release body must follow this structure.
+
+The GitHub release title may include the update name, for example `AethelGuard v0.4.2-sentinel — Monitor-Green PIN Texture Patch`.
+
+The first heading inside the changelog/release body must contain only the versioned product name. Do not append the update name inside that first body heading. The update theme may be explained in the short summary instead.
+
+Use a level-2 heading for the first changelog heading so GitHub does not show two oversized titles in a row.
 
 ```md
-# AethelGuard <version> — <update name>
+## AethelGuard <version>
 
-Short, friendly summary of what this update is about.
+Short, friendly summary of what this update is about. Mention the update theme here if needed.
 
 ## ✨ What changed
 

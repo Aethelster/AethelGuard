@@ -1,4 +1,4 @@
-# AethelGuard v0.4.2-sentinel — Monitor-Green PIN Texture Patch
+## AethelGuard v0.4.2-sentinel
 
 This Free update is a small, focused polish release for server owners using the built-in PIN GUI themes. It keeps the Free security feature set unchanged and fixes a visual texture issue in the monitor-green keypad theme. 🛡️
 
